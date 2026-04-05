@@ -1,5 +1,6 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
+import { subjectRoutes } from "./routes/subjects.js";
 
 const app = Fastify({ logger: true });
 
@@ -10,6 +11,8 @@ const start = async () => {
     app.get("/health", async () => {
       return { ok: true, service: "premayeso-api" };
     });
+
+    await app.register(subjectRoutes);
 
     await app.listen({ port: 4000, host: "0.0.0.0" });
     console.log("API running on http://localhost:4000");

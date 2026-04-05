@@ -1,4 +1,4 @@
-const API_URL = "http://localhost:4000";
+const API_URL = "http://192.168.1.4:4000";
 
 export type Subject = {
   id: string;

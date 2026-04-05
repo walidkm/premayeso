@@ -8,62 +8,51 @@ import {
   View,
 } from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { getTopics, Topic } from "../lib/api";
+import { getLessons, Lesson } from "../lib/api";
 import { RootStackParamList } from "../../App";
 
-type Props = NativeStackScreenProps<RootStackParamList, "Topics">;
+type Props = NativeStackScreenProps<RootStackParamList, "Lessons">;
 
-export default function TopicsScreen({ route, navigation }: Props) {
-  const { subject } = route.params;
-  const [topics, setTopics] = useState<Topic[]>([]);
+export default function LessonsScreen({ route, navigation }: Props) {
+  const { topic } = route.params;
+  const [lessons, setLessons] = useState<Lesson[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    getTopics(subject.id)
-      .then(setTopics)
+    getLessons(topic.id)
+      .then(setLessons)
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [subject.id]);
+  }, [topic.id]);
 
   if (loading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" />
-      </View>
-    );
+    return <View style={styles.center}><ActivityIndicator size="large" /></View>;
   }
 
   if (error) {
-    return (
-      <View style={styles.center}>
-        <Text style={styles.errorText}>{error}</Text>
-      </View>
-    );
+    return <View style={styles.center}><Text style={styles.errorText}>{error}</Text></View>;
   }
 
-  if (topics.length === 0) {
+  if (lessons.length === 0) {
     return (
       <View style={styles.center}>
-        <Text style={styles.emptyText}>No topics yet for {subject.name}.</Text>
+        <Text style={styles.emptyText}>No lessons yet for {topic.name}.</Text>
       </View>
     );
   }
 
   return (
     <FlatList
-      data={topics}
+      data={lessons}
       keyExtractor={(item) => item.id}
       contentContainerStyle={styles.list}
       renderItem={({ item }) => (
         <TouchableOpacity
           style={styles.card}
-          onPress={() => navigation.navigate("Lessons", { topic: item })}
+          onPress={() => navigation.navigate("LessonDetail", { lesson: item })}
         >
-          <Text style={styles.cardTitle}>{item.name}</Text>
-          {item.description && (
-            <Text style={styles.cardDesc}>{item.description}</Text>
-          )}
+          <Text style={styles.cardTitle}>{item.title}</Text>
         </TouchableOpacity>
       )}
     />
@@ -84,6 +73,5 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 2,
   },
-  cardTitle: { fontSize: 16, fontWeight: "600", marginBottom: 4 },
-  cardDesc: { fontSize: 14, color: "#666" },
+  cardTitle: { fontSize: 16, fontWeight: "600" },
 });

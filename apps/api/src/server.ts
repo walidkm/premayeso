@@ -1,6 +1,7 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import { subjectRoutes } from "./routes/subjects.js";
+import { lessonRoutes } from "./routes/lessons.js";
 
 const app = Fastify({ logger: true });
 
@@ -13,6 +14,7 @@ const start = async () => {
     });
 
     await app.register(subjectRoutes);
+    await app.register(lessonRoutes);
 
     await app.listen({ port: 4000, host: "0.0.0.0" });
     console.log("API running on http://localhost:4000");

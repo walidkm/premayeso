@@ -34,6 +34,15 @@ export async function getTopics(subjectId: string): Promise<Topic[]> {
 
 export type QuestionOption = { key: string; text: string };
 
+export type QuestionSource = {
+  school: string;
+  year: number;
+  term: string | null;
+  paper_number: number | null;
+  source_type: string | null;
+  title: string | null;
+};
+
 export type Question = {
   id: string;
   topic_id: string;
@@ -41,6 +50,7 @@ export type Question = {
   stem: string;
   options: QuestionOption[];
   explanation: string | null;
+  source: QuestionSource | null;
 };
 
 export type CheckResult = {

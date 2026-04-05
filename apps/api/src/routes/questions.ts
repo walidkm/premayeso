@@ -10,14 +10,39 @@ export async function questionRoutes(app: FastifyInstance) {
 
       const { data, error } = await supabase
         .from("questions")
-        .select("id, topic_id, lesson_id, stem, options, explanation")
+        .select(`
+          id, topic_id, lesson_id, stem, options, explanation,
+          paper_questions(
+            exam_papers(
+              year, term, paper_number, source_type, title,
+              schools(name)
+            )
+          )
+        `)
         .eq("topic_id", topicId);
 
       if (error) {
         return reply.status(500).send({ error: error.message });
       }
 
-      return data;
+      const result = (data ?? []).map((q: any) => {
+        const firstPaper = q.paper_questions?.[0]?.exam_papers;
+        let source = null;
+        if (firstPaper?.schools?.name) {
+          source = {
+            school: firstPaper.schools.name,
+            year: firstPaper.year,
+            term: firstPaper.term ?? null,
+            paper_number: firstPaper.paper_number ?? null,
+            source_type: firstPaper.source_type ?? null,
+            title: firstPaper.title ?? null,
+          };
+        }
+        const { paper_questions, ...rest } = q;
+        return { ...rest, source };
+      });
+
+      return result;
     }
   );
 

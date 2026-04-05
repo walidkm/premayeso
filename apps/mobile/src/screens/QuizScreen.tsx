@@ -14,6 +14,7 @@ import {
   saveQuizAttempt,
   CheckResult,
   Question,
+  QuestionSource,
 } from "../lib/api";
 import { RootStackParamList } from "../../App";
 
@@ -26,6 +27,14 @@ type AnswerRecord = {
 };
 
 type Phase = "question" | "feedback" | "results";
+
+function formatSource(source: QuestionSource): string {
+  const parts: string[] = [source.school];
+  if (source.term) parts.push(source.term);
+  parts.push(String(source.year));
+  if (source.paper_number) parts.push(`Paper ${source.paper_number}`);
+  return parts.join(" · ");
+}
 
 export default function QuizScreen({ route, navigation }: Props) {
   const { topic } = route.params;
@@ -167,6 +176,10 @@ export default function QuizScreen({ route, navigation }: Props) {
 
       <Text style={s.stem}>{question.stem}</Text>
 
+      {question.source && (
+        <Text style={s.source}>{formatSource(question.source)}</Text>
+      )}
+
       <View style={s.options}>
         {question.options.map((opt) => (
           <TouchableOpacity
@@ -207,6 +220,7 @@ const s = StyleSheet.create({
   container: { padding: 20, gap: 16 },
   counter: { fontSize: 13, color: "#999", textAlign: "right" },
   stem: { fontSize: 18, fontWeight: "600", lineHeight: 26 },
+  source: { fontSize: 12, color: "#888", fontStyle: "italic" },
   options: { gap: 10, marginTop: 8 },
   option: {
     flexDirection: "row",

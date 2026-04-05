@@ -32,8 +32,58 @@ export async function getTopics(subjectId: string): Promise<Topic[]> {
   return res.json();
 }
 
+export type QuestionOption = { key: string; text: string };
+
+export type Question = {
+  id: string;
+  topic_id: string;
+  lesson_id: string | null;
+  stem: string;
+  options: QuestionOption[];
+  explanation: string | null;
+};
+
+export type CheckResult = {
+  correct: boolean;
+  correctOption: string;
+  explanation: string | null;
+};
+
 export async function getLessons(topicId: string): Promise<Lesson[]> {
   const res = await fetch(`${API_URL}/topics/${topicId}/lessons`);
   if (!res.ok) throw new Error("Failed to fetch lessons");
   return res.json();
+}
+
+export async function getQuestions(topicId: string): Promise<Question[]> {
+  const res = await fetch(`${API_URL}/topics/${topicId}/questions`);
+  if (!res.ok) throw new Error("Failed to fetch questions");
+  return res.json();
+}
+
+export async function checkAnswer(
+  questionId: string,
+  chosenOption: string
+): Promise<CheckResult> {
+  const res = await fetch(`${API_URL}/questions/${questionId}/check`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ chosenOption }),
+  });
+  if (!res.ok) throw new Error("Failed to check answer");
+  return res.json();
+}
+
+export async function saveQuizAttempt(attempt: {
+  user_id: string | null;
+  topic_id: string;
+  score: number;
+  total: number;
+  answers: { question_id: string; chosen: string; correct: boolean }[];
+}): Promise<void> {
+  await fetch(`${API_URL}/quiz-attempts`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(attempt),
+  });
 }

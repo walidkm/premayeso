@@ -57,3 +57,19 @@ export async function loadSession(): Promise<AuthSession | null> {
 export async function getAccessToken(): Promise<string | null> {
   return AsyncStorage.getItem(ACCESS_KEY);
 }
+
+// ── Exam path ─────────────────────────────────────────────────
+
+const EXAM_PATH_KEY = "pm_exam_path";
+
+export async function saveExamPath(path: string): Promise<void> {
+  await AsyncStorage.setItem(EXAM_PATH_KEY, path);
+}
+
+export async function loadExamPath(): Promise<string | null> {
+  return AsyncStorage.getItem(EXAM_PATH_KEY);
+}
+
+export async function clearExamPath(): Promise<void> {
+  await AsyncStorage.removeItem(EXAM_PATH_KEY);
+}

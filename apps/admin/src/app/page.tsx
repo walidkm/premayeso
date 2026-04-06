@@ -199,9 +199,16 @@ export default async function DashboardPage() {
               <Link href="/" className="rounded-lg px-3 py-1.5 text-sm font-medium text-zinc-900 bg-zinc-100">
                 Dashboard
               </Link>
-              <Link href="/settings" className="rounded-lg px-3 py-1.5 text-sm font-medium text-zinc-500 hover:text-zinc-900 hover:bg-zinc-50 transition">
-                Integrations
-              </Link>
+              {(adminSession.user.role === "admin" || adminSession.user.role === "super_admin" || adminSession.user.role === "school_admin") && (
+                <Link href="/content" className="rounded-lg px-3 py-1.5 text-sm font-medium text-zinc-500 hover:text-zinc-900 hover:bg-zinc-50 transition">
+                  Content
+                </Link>
+              )}
+              {(adminSession.user.role === "admin" || adminSession.user.role === "super_admin") && (
+                <Link href="/settings" className="rounded-lg px-3 py-1.5 text-sm font-medium text-zinc-500 hover:text-zinc-900 hover:bg-zinc-50 transition">
+                  Integrations
+                </Link>
+              )}
             </nav>
           </div>
           <div className="flex items-center gap-3">

@@ -9,7 +9,7 @@ export async function lessonRoutes(app: FastifyInstance) {
 
       const { data, error } = await supabase
         .from("lessons")
-        .select("id, title, content, order_index")
+        .select("id, title, content, video_url, content_type, order_index")
         .eq("topic_id", topicId)
         .order("order_index");
 
@@ -28,7 +28,7 @@ export async function lessonRoutes(app: FastifyInstance) {
 
       const { data, error } = await supabase
         .from("lessons")
-        .select("id, title, content, order_index, topic_id")
+        .select("id, title, content, video_url, content_type, order_index, topic_id")
         .eq("id", lessonId)
         .single();
 

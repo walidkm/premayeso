@@ -1,4 +1,5 @@
 import { getAccessToken } from "./auth";
+import { type ExamPath } from "./examPath";
 
 const API_URL = (process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:4000").replace(/\/$/, "");
 
@@ -13,17 +14,22 @@ async function authHeaders(): Promise<Record<string, string>> {
 export type Subject = {
   id: string;
   name: string;
+  code: string | null;
   description: string | null;
+  exam_path: ExamPath | null;
+  order_index: number;
 };
 
 export type Topic = {
   id: string;
   name: string;
   description: string | null;
+  form_level: string | null;
+  exam_path: ExamPath | null;
   order_index: number;
 };
 
-export async function getSubjects(examPath?: string): Promise<Subject[]> {
+export async function getSubjects(examPath?: ExamPath): Promise<Subject[]> {
   const url = examPath
     ? `${API_URL}/subjects?exam_path=${examPath}`
     : `${API_URL}/subjects`;
@@ -32,13 +38,38 @@ export async function getSubjects(examPath?: string): Promise<Subject[]> {
   return res.json();
 }
 
-export async function setExamPathApi(examPath: string): Promise<void> {
+export async function setExamPathApi(examPath: ExamPath): Promise<void> {
   const extra = await authHeaders();
-  await fetch(`${API_URL}/api/v1/auth/exam-path`, {
+  const res = await fetch(`${API_URL}/api/v1/auth/exam-path`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json", ...extra },
     body: JSON.stringify({ exam_path: examPath }),
   });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error((body as { error?: string }).error ?? "Failed to update exam level");
+  }
+}
+
+export type AuthMe = {
+  id: string;
+  phone: string | null;
+  full_name: string | null;
+  role: string;
+  exam_path: string | null;
+  subscription_status: string;
+};
+
+export async function getMe(): Promise<AuthMe> {
+  const extra = await authHeaders();
+  const res = await fetch(`${API_URL}/api/v1/auth/me`, {
+    headers: extra,
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error((body as { error?: string }).error ?? "Failed to fetch current user");
+  }
+  return res.json();
 }
 
 export type Lesson = {
@@ -148,7 +179,7 @@ export type PaperQuestion = {
 
 export async function getPapers(
   subjectId: string,
-  examPath?: string
+  examPath?: ExamPath
 ): Promise<ExamPaper[]> {
   const url = examPath
     ? `${API_URL}/subjects/${subjectId}/papers?exam_path=${examPath}`

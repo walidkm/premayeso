@@ -10,13 +10,11 @@ import LessonDetailScreen from "./src/screens/LessonDetailScreen";
 import QuizScreen from "./src/screens/QuizScreen";
 import PapersScreen from "./src/screens/PapersScreen";
 import PaperDrillScreen from "./src/screens/PaperDrillScreen";
-import ProfileScreen from "./src/screens/ProfileScreen";
+import SettingsScreen from "./src/screens/SettingsScreen";
 import LoginScreen from "./src/screens/LoginScreen";
-import ExamPathScreen from "./src/screens/ExamPathScreen";
 
 export type RootStackParamList = {
   Login: undefined;
-  ExamPath: undefined;
   Subjects: undefined;
   Topics: { subject: Subject };
   Lessons: { topic: Topic };
@@ -24,7 +22,7 @@ export type RootStackParamList = {
   Quiz: { topic: Topic };
   Papers: { subject: Subject };
   PaperDrill: { paper: ExamPaper; subject: Subject };
-  Profile: undefined;
+  Settings: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -41,17 +39,19 @@ function AppNavigator() {
   }
 
   return (
-    <Stack.Navigator>
+    <Stack.Navigator
+      screenOptions={{
+        headerTintColor: "#0f172a",
+        headerShadowVisible: false,
+        headerStyle: { backgroundColor: "#f4f7fb" },
+        headerTitleStyle: { fontWeight: "700" },
+        contentStyle: { backgroundColor: "#f4f7fb" },
+      }}
+    >
       {state.status === "unauthenticated" ? (
         <Stack.Screen
           name="Login"
           component={LoginScreen}
-          options={{ headerShown: false }}
-        />
-      ) : state.examPath === null || state.examPath === "" ? (
-        <Stack.Screen
-          name="ExamPath"
-          component={ExamPathScreen}
           options={{ headerShown: false }}
         />
       ) : (
@@ -60,23 +60,21 @@ function AppNavigator() {
             name="Subjects"
             component={SubjectsScreen}
             options={({ navigation }) => ({
-              title: "PreMayeso",
+              title: "",
               headerRight: () => (
                 <TouchableOpacity
-                  onPress={() => navigation.navigate("Profile")}
-                  style={{ marginRight: 4, padding: 4 }}
+                  onPress={() => navigation.navigate("Settings")}
+                  style={{
+                    marginRight: 4,
+                    paddingHorizontal: 12,
+                    paddingVertical: 8,
+                    borderRadius: 999,
+                    backgroundColor: "#e2e8f0",
+                  }}
                 >
-                  <View style={{
-                    width: 32, height: 32, borderRadius: 16,
-                    backgroundColor: "#111",
-                    alignItems: "center", justifyContent: "center",
-                  }}>
-                    <Text style={{ color: "#fff", fontSize: 14, fontWeight: "700" }}>
-                      {state.status === "authenticated"
-                        ? state.user.phone.replace(/\D/g, "").slice(-2)
-                        : "?"}
-                    </Text>
-                  </View>
+                  <Text style={{ color: "#0f172a", fontSize: 13, fontWeight: "700" }}>
+                    Settings
+                  </Text>
                 </TouchableOpacity>
               ),
             })}
@@ -121,9 +119,9 @@ function AppNavigator() {
             })}
           />
           <Stack.Screen
-            name="Profile"
-            component={ProfileScreen}
-            options={{ title: "My Profile" }}
+            name="Settings"
+            component={SettingsScreen}
+            options={{ title: "Settings" }}
           />
         </>
       )}

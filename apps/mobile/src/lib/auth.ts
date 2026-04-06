@@ -7,6 +7,7 @@
  *   "pm_user"     – JSON-serialised user profile
  */
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { type ExamPath, normalizeExamPath } from "./examPath";
 
 const ACCESS_KEY  = "pm_access";
 const REFRESH_KEY = "pm_refresh";
@@ -62,12 +63,13 @@ export async function getAccessToken(): Promise<string | null> {
 
 const EXAM_PATH_KEY = "pm_exam_path";
 
-export async function saveExamPath(path: string): Promise<void> {
+export async function saveExamPath(path: ExamPath): Promise<void> {
   await AsyncStorage.setItem(EXAM_PATH_KEY, path);
 }
 
-export async function loadExamPath(): Promise<string | null> {
-  return AsyncStorage.getItem(EXAM_PATH_KEY);
+export async function loadExamPath(): Promise<ExamPath | null> {
+  const stored = await AsyncStorage.getItem(EXAM_PATH_KEY);
+  return normalizeExamPath(stored);
 }
 
 export async function clearExamPath(): Promise<void> {

@@ -15,7 +15,12 @@ import {
   saveExamPath,
   clearExamPath,
 } from "./auth";
-import { refreshTokens, setExamPathApi } from "./api";
+import { getMe, refreshTokens, setExamPathApi } from "./api";
+import {
+  DEFAULT_EXAM_PATH,
+  type ExamPath,
+  normalizeExamPath,
+} from "./examPath";
 
 type AuthState =
   | { status: "loading" }
@@ -24,14 +29,14 @@ type AuthState =
       status: "authenticated";
       user: AuthUser;
       accessToken: string;
-      examPath: string | null;
+      examPath: ExamPath;
     };
 
 type AuthContextValue = {
   state: AuthState;
   signIn: (session: AuthSession) => Promise<void>;
   signOut: () => Promise<void>;
-  setExamPath: (path: string) => Promise<void>;
+  setExamPath: (path: ExamPath) => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -39,13 +44,28 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>({ status: "loading" });
 
+  const resolveExamPath = async (): Promise<ExamPath> => {
+    const storedExamPath = await loadExamPath();
+    if (storedExamPath) {
+      return storedExamPath;
+    }
+
+    try {
+      const me = await getMe();
+      const serverExamPath = normalizeExamPath(me.exam_path);
+      const resolved = serverExamPath ?? DEFAULT_EXAM_PATH;
+      await saveExamPath(resolved);
+      return resolved;
+    } catch {
+      await saveExamPath(DEFAULT_EXAM_PATH);
+      return DEFAULT_EXAM_PATH;
+    }
+  };
+
   useEffect(() => {
     (async () => {
       try {
-        const [session, examPath] = await Promise.all([
-          loadSession(),
-          loadExamPath(),
-        ]);
+        const session = await loadSession();
 
         if (!session) {
           setState({ status: "unauthenticated" });
@@ -57,6 +77,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const tokens = await refreshTokens(session.refreshToken);
           const updated: AuthSession = { ...tokens, user: session.user };
           await saveSession(updated);
+          const examPath = await resolveExamPath();
           setState({
             status: "authenticated",
             user: updated.user,
@@ -76,7 +97,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signIn = async (session: AuthSession) => {
     await saveSession(session);
-    const examPath = await loadExamPath();
+    const examPath = await resolveExamPath();
     setState({
       status: "authenticated",
       user: session.user,
@@ -91,9 +112,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setState({ status: "unauthenticated" });
   };
 
-  const setExamPath = async (path: string) => {
-    await saveExamPath(path);
+  const setExamPath = async (path: ExamPath) => {
     await setExamPathApi(path);
+    await saveExamPath(path);
     setState((prev) => {
       if (prev.status !== "authenticated") return prev;
       return { ...prev, examPath: path };

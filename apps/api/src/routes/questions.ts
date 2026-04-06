@@ -10,14 +10,41 @@ export async function questionRoutes(app: FastifyInstance) {
 
       const { data, error } = await supabase
         .from("questions")
-        .select("id, topic_id, lesson_id, stem, options, explanation")
-        .eq("topic_id", topicId);
+        .select(`
+          id, topic_id, subtopic_id, stem, options, explanation,
+          type, difficulty, marks, allow_shuffle, hints, tier_gate, language,
+          paper_questions(
+            order_index, section,
+            exam_papers(
+              year, paper_number, source_type, title,
+              schools(name)
+            )
+          )
+        `)
+        .eq("topic_id", topicId)
+        .eq("is_approved", true);
 
       if (error) {
         return reply.status(500).send({ error: error.message });
       }
 
-      return data;
+      const result = (data ?? []).map((q: any) => {
+        const firstPaper = q.paper_questions?.[0]?.exam_papers;
+        let source = null;
+        if (firstPaper) {
+          source = {
+            school: firstPaper.schools?.name ?? null,
+            year: firstPaper.year ?? null,
+            paper_number: firstPaper.paper_number ?? null,
+            source_type: firstPaper.source_type ?? null,
+            title: firstPaper.title ?? null,
+          };
+        }
+        const { paper_questions, ...rest } = q;
+        return { ...rest, source };
+      });
+
+      return result;
     }
   );
 
@@ -31,7 +58,7 @@ export async function questionRoutes(app: FastifyInstance) {
 
     const { data, error } = await supabase
       .from("questions")
-      .select("correct_option, explanation")
+      .select("correct_option, explanation, worked_solution")
       .eq("id", questionId)
       .single();
 
@@ -43,6 +70,7 @@ export async function questionRoutes(app: FastifyInstance) {
       correct: chosenOption === data.correct_option,
       correctOption: data.correct_option,
       explanation: data.explanation ?? null,
+      workedSolution: data.worked_solution ?? null,
     };
   });
 
@@ -58,7 +86,6 @@ export async function questionRoutes(app: FastifyInstance) {
   }>("/quiz-attempts", async (request, reply) => {
     const { user_id, topic_id, score, total, answers } = request.body;
 
-    // user_id is nullable until auth is added
     if (!user_id) {
       return reply.status(201).send({ saved: false, reason: "no_user" });
     }

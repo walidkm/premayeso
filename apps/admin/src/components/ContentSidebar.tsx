@@ -1,11 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import type { ContentTreeSubjectDto, LessonAdminDto } from "../lib/content";
 
 const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000").replace(/\/$/, "");
-
-type TreeTopic = { id: string; name: string; code: string | null; order_index: number };
-type TreeSubject = { id: string; name: string; code: string | null; order_index: number; topics: TreeTopic[] };
 
 export type Selection =
   | { type: "subject"; id: string }
@@ -23,7 +21,7 @@ type Props = {
 };
 
 export function ContentSidebar({ token, role, selection, onSelect }: Props) {
-  const [tree, setTree] = useState<TreeSubject[]>([]);
+  const [tree, setTree] = useState<ContentTreeSubjectDto[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const isSuperAdmin = role === "admin" || role === "super_admin";
 
@@ -31,7 +29,7 @@ export function ContentSidebar({ token, role, selection, onSelect }: Props) {
     fetch(`${API_URL}/admin/content/tree`, {
       headers: { Authorization: `Bearer ${token}` },
     })
-      .then((r) => r.json())
+      .then((r) => r.json() as Promise<ContentTreeSubjectDto[]>)
       .then((data) => {
         if (Array.isArray(data)) setTree(data);
       })
@@ -186,7 +184,7 @@ export function ContentSidebar({ token, role, selection, onSelect }: Props) {
   );
 }
 
-type LessonMeta = { id: string; title: string; order_index: number };
+type LessonMeta = Pick<LessonAdminDto, "id" | "title" | "order_index">;
 
 function LessonList({
   topicId,
@@ -205,7 +203,7 @@ function LessonList({
     fetch(`${API_URL}/admin/topics/${topicId}/lessons-admin`, {
       headers: { Authorization: `Bearer ${token}` },
     })
-      .then((r) => r.json())
+      .then((r) => r.json() as Promise<LessonMeta[]>)
       .then((d) => { if (Array.isArray(d)) setLessons(d); })
       .catch(() => {});
   }, [topicId, token]);

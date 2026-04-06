@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import type { ApiErrorResponse, ContentTreeSubjectDto } from "../lib/content";
 
 const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000").replace(/\/$/, "");
 
@@ -41,10 +42,10 @@ export function TopicForm({ topicId, subjectId, token, onSaved, onDeleted }: Pro
     fetch(`${API_URL}/admin/content/tree`, {
       headers: { Authorization: `Bearer ${token}` },
     })
-      .then((r) => r.json())
-      .then((subjects: any[]) => {
+      .then((r) => r.json() as Promise<ContentTreeSubjectDto[]>)
+      .then((subjects) => {
         for (const s of subjects) {
-          const t = (s.topics ?? []).find((tp: any) => tp.id === topicId);
+          const t = (s.topics ?? []).find((topic) => topic.id === topicId);
           if (t) {
             setForm({
               name: t.name ?? "",
@@ -74,8 +75,8 @@ export function TopicForm({ topicId, subjectId, token, onSaved, onDeleted }: Pro
       body: JSON.stringify(body),
     });
     if (!res.ok) {
-      const b = await res.json().catch(() => ({}));
-      setError((b as any).error ?? "Save failed");
+      const body: ApiErrorResponse = await res.json().catch(() => ({}));
+      setError(body.error ?? "Save failed");
     } else {
       onSaved();
     }
@@ -90,8 +91,8 @@ export function TopicForm({ topicId, subjectId, token, onSaved, onDeleted }: Pro
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) {
-      const b = await res.json().catch(() => ({}));
-      setError((b as any).error ?? "Delete failed");
+      const body: ApiErrorResponse = await res.json().catch(() => ({}));
+      setError(body.error ?? "Delete failed");
     } else {
       onDeleted?.();
     }

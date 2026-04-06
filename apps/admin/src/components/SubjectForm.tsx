@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import type { ApiErrorResponse, ContentTreeSubjectDto } from "../lib/content";
 
 const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000").replace(/\/$/, "");
 
@@ -38,15 +39,15 @@ export function SubjectForm({ subjectId, token, onSaved, onDeleted }: Props) {
     fetch(`${API_URL}/admin/content/tree`, {
       headers: { Authorization: `Bearer ${token}` },
     })
-      .then((r) => r.json())
-      .then((data: SubjectData[]) => {
-        const found = data.find((s: SubjectData) => s.id === subjectId);
+      .then((r) => r.json() as Promise<ContentTreeSubjectDto[]>)
+      .then((data) => {
+        const found = data.find((s) => s.id === subjectId);
         if (found) {
           setForm({
             name: found.name ?? "",
-            description: (found as any).description ?? "",
+            description: found.description ?? "",
             code: found.code ?? "",
-            exam_path: (found as any).exam_path ?? "",
+            exam_path: found.exam_path ?? "",
             order_index: found.order_index ?? 0,
           });
         }
@@ -66,8 +67,8 @@ export function SubjectForm({ subjectId, token, onSaved, onDeleted }: Props) {
       body: JSON.stringify(form),
     });
     if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      setError((body as any).error ?? "Save failed");
+      const body: ApiErrorResponse = await res.json().catch(() => ({}));
+      setError(body.error ?? "Save failed");
     } else {
       onSaved();
     }
@@ -82,8 +83,8 @@ export function SubjectForm({ subjectId, token, onSaved, onDeleted }: Props) {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      setError((body as any).error ?? "Delete failed");
+      const body: ApiErrorResponse = await res.json().catch(() => ({}));
+      setError(body.error ?? "Delete failed");
     } else {
       onDeleted?.();
     }

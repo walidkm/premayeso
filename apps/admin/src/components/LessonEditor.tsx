@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import type { ApiErrorResponse, LessonAdminDto } from "../lib/content";
 
 const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000").replace(/\/$/, "");
 
@@ -47,10 +48,10 @@ export function LessonEditor({ lessonId, topicId, token, onSaved, onDeleted }: P
     fetch(`${API_URL}/admin/topics/${topicId}/lessons-admin`, {
       headers: { Authorization: `Bearer ${token}` },
     })
-      .then((r) => r.json())
-      .then((lessons: any[]) => {
+      .then((r) => r.json() as Promise<LessonAdminDto[]>)
+      .then((lessons) => {
         if (!Array.isArray(lessons)) return;
-        const l = lessons.find((x: any) => x.id === lessonId);
+        const l = lessons.find((lesson) => lesson.id === lessonId);
         if (l) {
           setForm({
             title: l.title ?? "",
@@ -79,8 +80,8 @@ export function LessonEditor({ lessonId, topicId, token, onSaved, onDeleted }: P
       body: JSON.stringify(body),
     });
     if (!res.ok) {
-      const b = await res.json().catch(() => ({}));
-      setError((b as any).error ?? "Save failed");
+      const body: ApiErrorResponse = await res.json().catch(() => ({}));
+      setError(body.error ?? "Save failed");
     } else {
       onSaved();
     }
@@ -95,8 +96,8 @@ export function LessonEditor({ lessonId, topicId, token, onSaved, onDeleted }: P
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) {
-      const b = await res.json().catch(() => ({}));
-      setError((b as any).error ?? "Delete failed");
+      const body: ApiErrorResponse = await res.json().catch(() => ({}));
+      setError(body.error ?? "Delete failed");
     } else {
       onDeleted?.();
     }

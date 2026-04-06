@@ -1,4 +1,14 @@
+import { getAccessToken } from "./auth";
+
 const API_URL = (process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:4000").replace(/\/$/, "");
+
+// ── Auth headers helper ────────────────────────────────────────
+
+async function authHeaders(): Promise<Record<string, string>> {
+  const token = await getAccessToken();
+  if (!token) return {};
+  return { Authorization: `Bearer ${token}` };
+}
 
 export type Subject = {
   id: string;
@@ -91,9 +101,59 @@ export async function saveQuizAttempt(attempt: {
   total: number;
   answers: { question_id: string; chosen: string; correct: boolean }[];
 }): Promise<void> {
+  const extra = await authHeaders();
   await fetch(`${API_URL}/quiz-attempts`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...extra },
     body: JSON.stringify(attempt),
   });
+}
+
+// ── Auth API ──────────────────────────────────────────────────
+
+export async function requestOtp(phone: string): Promise<void> {
+  const res = await fetch(`${API_URL}/api/v1/auth/request-otp`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ phone }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error((body as { error?: string }).error ?? "Failed to send OTP");
+  }
+}
+
+export type AuthResult = {
+  accessToken: string;
+  refreshToken: string;
+  user: { id: string; phone: string; role: string };
+};
+
+export async function verifyOtp(
+  phone: string,
+  otp: string,
+  name?: string
+): Promise<AuthResult> {
+  const res = await fetch(`${API_URL}/api/v1/auth/verify-otp`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ phone, otp, name }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error((body as { error?: string }).error ?? "OTP verification failed");
+  }
+  return res.json();
+}
+
+export async function refreshTokens(
+  refreshToken: string
+): Promise<{ accessToken: string; refreshToken: string }> {
+  const res = await fetch(`${API_URL}/api/v1/auth/refresh`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ refreshToken }),
+  });
+  if (!res.ok) throw new Error("Token refresh failed");
+  return res.json();
 }

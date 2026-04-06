@@ -16,6 +16,7 @@ import {
   Question,
   QuestionSource,
 } from "../lib/api";
+import { useAuth } from "../lib/AuthContext";
 import { RootStackParamList } from "../../App";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Quiz">;
@@ -38,6 +39,8 @@ function formatSource(source: QuestionSource): string {
 
 export default function QuizScreen({ route, navigation }: Props) {
   const { topic } = route.params;
+  const { state } = useAuth();
+  const userId = state.status === "authenticated" ? state.user.id : null;
 
   const [questions, setQuestions] = useState<Question[]>([]);
   const [loading, setLoading] = useState(true);
@@ -141,9 +144,8 @@ export default function QuizScreen({ route, navigation }: Props) {
       const finalAnswers = answers;
       const score = finalAnswers.filter((a) => a.correct).length;
 
-      // TODO: replace null with real user_id once auth is added
       await saveQuizAttempt({
-        user_id: null,
+        user_id: userId,
         topic_id: topic.id,
         score,
         total: finalAnswers.length,

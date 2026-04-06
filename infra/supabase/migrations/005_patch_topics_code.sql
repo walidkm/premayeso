@@ -1,0 +1,84 @@
+-- ============================================================
+-- Patch: add code column to topics and back-fill all 78 JCE topics
+-- ============================================================
+
+alter table public.topics
+  add column if not exists code text unique;
+
+update public.topics set code = 'MATH-JCE-NUMBERS-SETS-AND-NUMBER-SYSTEMS'    where id = '22010000-0000-0000-0000-000000000001';
+update public.topics set code = 'MATH-JCE-INTRODUCTION-TO-ALGEBRA'            where id = '22010000-0000-0000-0000-000000000002';
+update public.topics set code = 'MATH-JCE-ANGLES-LINES-AND-POLYGONS'          where id = '22010000-0000-0000-0000-000000000003';
+update public.topics set code = 'MATH-JCE-DATA-COLLECTION-AND-REPRESENTATION' where id = '22010000-0000-0000-0000-000000000004';
+update public.topics set code = 'MATH-JCE-MEASUREMENTS-AND-UNITS'             where id = '22010000-0000-0000-0000-000000000005';
+update public.topics set code = 'MATH-JCE-EQUATIONS-AND-INEQUALITIES'         where id = '22010000-0000-0000-0000-000000000006';
+update public.topics set code = 'MATH-JCE-CIRCLES-AND-CONSTRUCTIONS'          where id = '22010000-0000-0000-0000-000000000007';
+update public.topics set code = 'MATH-JCE-INTRODUCTION-TO-TRIGONOMETRY'       where id = '22010000-0000-0000-0000-000000000008';
+update public.topics set code = 'MATH-JCE-GRAPHS-AND-FUNCTIONS'               where id = '22010000-0000-0000-0000-000000000009';
+update public.topics set code = 'MATH-JCE-PROBABILITY-AND-STATISTICS'         where id = '22010000-0000-0000-0000-000000000010';
+update public.topics set code = 'BIOL-JCE-CELL-STRUCTURE-AND-FUNCTION'        where id = '22050000-0000-0000-0000-000000000001';
+update public.topics set code = 'BIOL-JCE-CLASSIFICATION-OF-LIVING-THINGS'    where id = '22050000-0000-0000-0000-000000000002';
+update public.topics set code = 'BIOL-JCE-NUTRITION-IN-PLANTS-AND-ANIMALS'    where id = '22050000-0000-0000-0000-000000000003';
+update public.topics set code = 'BIOL-JCE-TRANSPORT-IN-LIVING-ORGANISMS'      where id = '22050000-0000-0000-0000-000000000004';
+update public.topics set code = 'BIOL-JCE-RESPIRATION-AND-GAS-EXCHANGE'       where id = '22050000-0000-0000-0000-000000000005';
+update public.topics set code = 'BIOL-JCE-REPRODUCTION-IN-LIVING-ORGANISMS'   where id = '22050000-0000-0000-0000-000000000006';
+update public.topics set code = 'BIOL-JCE-ECOLOGY-AND-THE-ENVIRONMENT'        where id = '22050000-0000-0000-0000-000000000007';
+update public.topics set code = 'CHEM-JCE-INTRODUCTION-TO-CHEMISTRY-AND-SAFETY' where id = '22080000-0000-0000-0000-000000000001';
+update public.topics set code = 'CHEM-JCE-ATOMS-ELEMENTS-AND-COMPOUNDS'       where id = '22080000-0000-0000-0000-000000000002';
+update public.topics set code = 'CHEM-JCE-STATES-OF-MATTER'                   where id = '22080000-0000-0000-0000-000000000003';
+update public.topics set code = 'CHEM-JCE-CHEMICAL-REACTIONS'                 where id = '22080000-0000-0000-0000-000000000004';
+update public.topics set code = 'CHEM-JCE-ACIDS-BASES-AND-SALTS'              where id = '22080000-0000-0000-0000-000000000005';
+update public.topics set code = 'CHEM-JCE-METALS-AND-NON-METALS'              where id = '22080000-0000-0000-0000-000000000006';
+update public.topics set code = 'PHYS-JCE-MEASUREMENT-AND-PHYSICAL-QUANTITIES' where id = '22090000-0000-0000-0000-000000000001';
+update public.topics set code = 'PHYS-JCE-FORCES-AND-MOTION'                  where id = '22090000-0000-0000-0000-000000000002';
+update public.topics set code = 'PHYS-JCE-HEAT-AND-TEMPERATURE'               where id = '22090000-0000-0000-0000-000000000003';
+update public.topics set code = 'PHYS-JCE-LIGHT-AND-OPTICS'                   where id = '22090000-0000-0000-0000-000000000004';
+update public.topics set code = 'PHYS-JCE-SOUND-AND-WAVES'                    where id = '22090000-0000-0000-0000-000000000005';
+update public.topics set code = 'PHYS-JCE-ELECTRICITY-AND-MAGNETISM'          where id = '22090000-0000-0000-0000-000000000006';
+update public.topics set code = 'ENGR-JCE-PARTS-OF-SPEECH'                    where id = '22030000-0000-0000-0000-000000000001';
+update public.topics set code = 'ENGR-JCE-SENTENCE-STRUCTURE'                 where id = '22030000-0000-0000-0000-000000000002';
+update public.topics set code = 'ENGR-JCE-READING-COMPREHENSION'              where id = '22030000-0000-0000-0000-000000000003';
+update public.topics set code = 'ENGR-JCE-WRITING-AND-COMPOSITION'            where id = '22030000-0000-0000-0000-000000000004';
+update public.topics set code = 'ENGR-JCE-TENSES-AND-VOICE'                   where id = '22030000-0000-0000-0000-000000000005';
+update public.topics set code = 'ENGR-JCE-VOCABULARY-AND-IDIOMS'              where id = '22030000-0000-0000-0000-000000000006';
+update public.topics set code = 'ENGL-JCE-POETRY-ANALYSIS'                    where id = '22040000-0000-0000-0000-000000000001';
+update public.topics set code = 'ENGL-JCE-PROSE-AND-SHORT-STORIES'            where id = '22040000-0000-0000-0000-000000000002';
+update public.topics set code = 'ENGL-JCE-DRAMA-AND-PLAYS'                    where id = '22040000-0000-0000-0000-000000000003';
+update public.topics set code = 'ENGL-JCE-NOVEL-STUDY'                        where id = '22040000-0000-0000-0000-000000000004';
+update public.topics set code = 'CHIC-JCE-NDAKATULO'                          where id = '22060000-0000-0000-0000-000000000001';
+update public.topics set code = 'CHIC-JCE-NKHANI'                             where id = '22060000-0000-0000-0000-000000000002';
+update public.topics set code = 'CHIC-JCE-MASAMU-A-CHICHEWA'                  where id = '22060000-0000-0000-0000-000000000003';
+update public.topics set code = 'CHIC-JCE-KULEMBA'                            where id = '22060000-0000-0000-0000-000000000004';
+update public.topics set code = 'HIST-JCE-PRE-COLONIAL-MALAWI'                where id = '22070000-0000-0000-0000-000000000001';
+update public.topics set code = 'HIST-JCE-COLONIAL-PERIOD-IN-MALAWI'          where id = '22070000-0000-0000-0000-000000000002';
+update public.topics set code = 'HIST-JCE-INDEPENDENCE-MOVEMENTS'             where id = '22070000-0000-0000-0000-000000000003';
+update public.topics set code = 'HIST-JCE-POST-INDEPENDENCE-AFRICA'           where id = '22070000-0000-0000-0000-000000000004';
+update public.topics set code = 'SOCS-JCE-MALAWI-GOVERNMENT-AND-CITIZENSHIP'  where id = '22100000-0000-0000-0000-000000000001';
+update public.topics set code = 'SOCS-JCE-HUMAN-RIGHTS-AND-RESPONSIBILITIES'  where id = '22100000-0000-0000-0000-000000000002';
+update public.topics set code = 'SOCS-JCE-ENVIRONMENT-AND-SUSTAINABILITY'     where id = '22100000-0000-0000-0000-000000000003';
+update public.topics set code = 'SOCS-JCE-DEVELOPMENT-IN-MALAWI'              where id = '22100000-0000-0000-0000-000000000004';
+update public.topics set code = 'LIFE-JCE-PERSONAL-DEVELOPMENT'               where id = '22110000-0000-0000-0000-000000000001';
+update public.topics set code = 'LIFE-JCE-HEALTH-AND-REPRODUCTIVE-HEALTH'     where id = '22110000-0000-0000-0000-000000000002';
+update public.topics set code = 'LIFE-JCE-DECISION-MAKING-AND-PEER-PRESSURE'  where id = '22110000-0000-0000-0000-000000000003';
+update public.topics set code = 'LIFE-JCE-HIV-AIDS-AND-CHRONIC-DISEASES'      where id = '22110000-0000-0000-0000-000000000004';
+update public.topics set code = 'AGRI-JCE-SOIL-SCIENCE-AND-CONSERVATION'      where id = '22120000-0000-0000-0000-000000000001';
+update public.topics set code = 'AGRI-JCE-CROP-PRODUCTION-AND-AGRONOMY'       where id = '22120000-0000-0000-0000-000000000002';
+update public.topics set code = 'AGRI-JCE-ANIMAL-HUSBANDRY'                   where id = '22120000-0000-0000-0000-000000000003';
+update public.topics set code = 'AGRI-JCE-FARM-MANAGEMENT-AND-MARKETING'      where id = '22120000-0000-0000-0000-000000000004';
+update public.topics set code = 'COMP-JCE-COMPUTER-HARDWARE-AND-SOFTWARE'     where id = '22130000-0000-0000-0000-000000000001';
+update public.topics set code = 'COMP-JCE-OPERATING-SYSTEMS-AND-FILE-MGMT'    where id = '22130000-0000-0000-0000-000000000002';
+update public.topics set code = 'COMP-JCE-WORD-PROCESSING-AND-SPREADSHEETS'   where id = '22130000-0000-0000-0000-000000000003';
+update public.topics set code = 'COMP-JCE-INTERNET-EMAIL-AND-DIGITAL-SAFETY'  where id = '22130000-0000-0000-0000-000000000004';
+update public.topics set code = 'GEOG-JCE-MAPS-SCALE-AND-DIRECTION'           where id = '22140000-0000-0000-0000-000000000001';
+update public.topics set code = 'GEOG-JCE-WEATHER-CLIMATE-AND-WATER-CYCLE'    where id = '22140000-0000-0000-0000-000000000002';
+update public.topics set code = 'GEOG-JCE-LANDFORMS-AND-PHYSICAL-GEOGRAPHY'   where id = '22140000-0000-0000-0000-000000000003';
+update public.topics set code = 'GEOG-JCE-POPULATION-AND-HUMAN-GEOGRAPHY'     where id = '22140000-0000-0000-0000-000000000004';
+update public.topics set code = 'BUSI-JCE-TRADE-AND-COMMERCE'                 where id = '22150000-0000-0000-0000-000000000001';
+update public.topics set code = 'BUSI-JCE-MONEY-BANKING-AND-FINANCE'          where id = '22150000-0000-0000-0000-000000000002';
+update public.topics set code = 'BUSI-JCE-ENTREPRENEURSHIP-AND-MARKETING'     where id = '22150000-0000-0000-0000-000000000003';
+update public.topics set code = 'BUSI-JCE-INSURANCE-AND-TRANSPORT-IN-TRADE'   where id = '22150000-0000-0000-0000-000000000004';
+update public.topics set code = 'ADDM-JCE-INDICES-AND-LOGARITHMS'             where id = '22020000-0000-0000-0000-000000000001';
+update public.topics set code = 'ADDM-JCE-QUADRATIC-EQUATIONS'                where id = '22020000-0000-0000-0000-000000000002';
+update public.topics set code = 'ADDM-JCE-VECTORS-AND-MATRICES'               where id = '22020000-0000-0000-0000-000000000003';
+update public.topics set code = 'ADDM-JCE-CALCULUS-DIFFERENTIATION'           where id = '22020000-0000-0000-0000-000000000004';
+
+notify pgrst, 'reload schema';

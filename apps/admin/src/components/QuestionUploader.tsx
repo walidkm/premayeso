@@ -31,6 +31,20 @@ function getResponseError(payload: unknown): string {
   return "Upload failed";
 }
 
+function isUploadResult(payload: unknown): payload is UploadResult {
+  if (!payload || typeof payload !== "object") {
+    return false;
+  }
+
+  const candidate = payload as Partial<UploadResult>;
+  return (
+    typeof candidate.imported === "number" &&
+    typeof candidate.errors === "number" &&
+    typeof candidate.total === "number" &&
+    Array.isArray(candidate.errorDetails)
+  );
+}
+
 export function QuestionUploader({ onSuccess }: { onSuccess?: () => void }) {
   const supabase = createClient();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -66,10 +80,16 @@ export function QuestionUploader({ onSuccess }: { onSuccess?: () => void }) {
         body: form,
       });
 
-      const json = (await res.json()) as UploadResult | { error?: string };
+      const json = (await res.json()) as unknown;
 
       if (!res.ok) {
         setErrorMsg(getResponseError(json));
+        setStatus("error");
+        return;
+      }
+
+      if (!isUploadResult(json)) {
+        setErrorMsg("Upload succeeded, but the server returned an unexpected response.");
         setStatus("error");
         return;
       }

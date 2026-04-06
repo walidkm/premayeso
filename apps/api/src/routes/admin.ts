@@ -193,7 +193,9 @@ function parseSheet(worksheet: XLSX.WorkSheet): RawRow[] {
 }
 
 function buildOptions(row: RawRow): { key: string; text: string }[] {
-  if (row.type === "mcq") {
+  const questionType = TYPE_MAP[row.type] ?? row.type;
+
+  if (questionType === "mcq") {
     const options: { key: string; text: string }[] = [];
     if (row.optionA) options.push({ key: "A", text: row.optionA });
     if (row.optionB) options.push({ key: "B", text: row.optionB });
@@ -202,7 +204,7 @@ function buildOptions(row: RawRow): { key: string; text: string }[] {
     return options;
   }
 
-  if (row.type === "true_false") {
+  if (questionType === "true_false") {
     return [
       { key: "A", text: "True" },
       { key: "B", text: "False" },

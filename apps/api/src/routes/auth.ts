@@ -18,9 +18,30 @@ function generateOtp(): string {
 }
 
 async function sendOtp(phone: string, otp: string): Promise<void> {
-  // DEV: log to console. PROD: replace with Africa's Talking SMS call.
-  const atKey = process.env.AT_API_KEY;
-  if (atKey) {
+  // Read AT credentials from settings table (with env var fallback)
+  let atKey = process.env.AT_API_KEY ?? "";
+  let atUsername = process.env.AT_USERNAME ?? "sandbox";
+  let atEnabled = !!atKey;
+
+  try {
+    const { data } = await supabaseAdmin
+      .from("settings")
+      .select("key, value")
+      .in("key", ["at_api_key", "at_username", "at_enabled"]);
+
+    const map = Object.fromEntries(
+      (data ?? []).map((r: { key: string; value: string }) => [r.key, r.value])
+    );
+
+    if (map.at_api_key && map.at_api_key !== "••••••••") atKey = map.at_api_key;
+    if (map.at_username) atUsername = map.at_username;
+    if (map.at_enabled === "true") atEnabled = true;
+    if (map.at_enabled === "false") atEnabled = false;
+  } catch {
+    // Fall through to env var values if settings read fails
+  }
+
+  if (atEnabled && atKey) {
     try {
       await fetch("https://api.africastalking.com/version1/messaging", {
         method: "POST",
@@ -30,7 +51,7 @@ async function sendOtp(phone: string, otp: string): Promise<void> {
           "Content-Type": "application/x-www-form-urlencoded",
         },
         body: new URLSearchParams({
-          username: process.env.AT_USERNAME ?? "sandbox",
+          username: atUsername,
           to: phone,
           message: `Your PreMayeso code is ${otp}. Valid for 5 minutes.`,
         }),
@@ -39,6 +60,7 @@ async function sendOtp(phone: string, otp: string): Promise<void> {
       // Fall through to console log if AT fails
     }
   }
+
   console.log(`\n[OTP] ${phone} → ${otp}\n`);
 }
 

@@ -9,21 +9,26 @@ import {
 } from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { getSubjects, Subject } from "../lib/api";
+import { useAuth } from "../lib/AuthContext";
 import { RootStackParamList } from "../../App";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Subjects">;
 
 export default function SubjectsScreen({ navigation }: Props) {
+  const { state } = useAuth();
+  const examPath =
+    state.status === "authenticated" ? state.examPath ?? undefined : undefined;
+
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    getSubjects()
+    getSubjects(examPath)
       .then(setSubjects)
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, []);
+  }, [examPath]);
 
   if (loading) {
     return (
@@ -46,6 +51,11 @@ export default function SubjectsScreen({ navigation }: Props) {
       data={subjects}
       keyExtractor={(item) => item.id}
       contentContainerStyle={styles.list}
+      ListHeaderComponent={
+        examPath ? (
+          <Text style={styles.pathBadge}>{examPath}</Text>
+        ) : null
+      }
       renderItem={({ item }) => (
         <TouchableOpacity
           style={styles.card}
@@ -65,6 +75,14 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   errorText: { color: "red" },
   list: { padding: 16, gap: 12 },
+  pathBadge: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#888",
+    textTransform: "uppercase",
+    letterSpacing: 1,
+    marginBottom: 4,
+  },
   card: {
     backgroundColor: "#fff",
     borderRadius: 12,

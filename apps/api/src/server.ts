@@ -6,6 +6,7 @@ import { lessonRoutes } from "./routes/lessons.js";
 import { questionRoutes } from "./routes/questions.js";
 import { adminRoutes } from "./routes/admin.js";
 import { authRoutes } from "./routes/auth.js";
+import { paperRoutes } from "./routes/papers.js";
 
 const app = Fastify({ logger: true });
 
@@ -27,6 +28,7 @@ const start = async () => {
     await app.register(questionRoutes);
     await app.register(adminRoutes);
     await app.register(authRoutes);
+    await app.register(paperRoutes);
 
     await app.listen({ port: 4000, host: "0.0.0.0" });
     console.log("API running on http://localhost:4000");

@@ -1,25 +1,13 @@
-import { FastifyInstance } from "fastify";
+import type { MultipartFile } from "@fastify/multipart";
+import { FastifyInstance, FastifyRequest } from "fastify";
 import * as XLSX from "xlsx";
+import { requireAdmin } from "../lib/adminAuth.js";
 import { supabaseAdmin } from "../lib/supabaseAdmin.js";
 
-// ── Auth guard ────────────────────────────────────────────────
-// Simple shared-secret header. Replace with JWT admin check in Sprint 3.
-const ADMIN_SECRET = process.env.ADMIN_SECRET ?? "premayeso-admin-dev";
-
-function assertAdmin(request: any, reply: any): boolean {
-  const secret = request.headers["x-admin-secret"];
-  if (secret !== ADMIN_SECRET) {
-    reply.status(401).send({ error: "Unauthorized" });
-    return false;
-  }
-  return true;
-}
-
-// ── Value normalisation maps ──────────────────────────────────
 const TYPE_MAP: Record<string, string> = {
   mcq: "mcq",
   "true/false": "true_false",
-  "true_false": "true_false",
+  true_false: "true_false",
   "short answer": "short_answer",
   short_answer: "short_answer",
   essay: "essay",
@@ -53,11 +41,24 @@ const EXAM_MODE_MAP: Record<string, string> = {
   both: "both",
 };
 
-function norm(v: any): string {
-  return String(v ?? "").trim().toLowerCase();
-}
+type CellValue = string | number | boolean | null | undefined;
 
-// ── Parse the Questions sheet ─────────────────────────────────
+type SubjectRow = {
+  id: string;
+  code: string | null;
+};
+
+type TopicRow = {
+  id: string;
+  subject_id: string;
+  code: string | null;
+  exam_path: string | null;
+};
+
+type MultipartRequest = FastifyRequest & {
+  file: () => Promise<MultipartFile | undefined>;
+};
+
 interface RawRow {
   type: string;
   questionNo: string;
@@ -85,43 +86,42 @@ interface RawRow {
   rowIndex: number;
 }
 
-function parseSheet(ws: XLSX.WorkSheet): RawRow[] {
-  // Row 1 (index 0): section group headers — skip
-  // Row 2 (index 1): column headers — use these
-  // Row 3 (index 2): example hints — skip
-  // Row 4+ (index 3+): data rows
+function norm(value: unknown): string {
+  return String(value ?? "").trim().toLowerCase();
+}
 
-  const raw = XLSX.utils.sheet_to_json<any[]>(ws, {
+function parseSheet(worksheet: XLSX.WorkSheet): RawRow[] {
+  const raw = XLSX.utils.sheet_to_json<CellValue[]>(worksheet, {
     header: 1,
     defval: "",
     blankrows: false,
   });
 
-  if (raw.length < 3) return [];
+  if (raw.length < 3) {
+    return [];
+  }
 
-  // Find the header row — it contains "Question Type *"
-  let headerIdx = -1;
-  for (let i = 0; i < Math.min(raw.length, 5); i++) {
-    const row = raw[i] as any[];
+  let headerIndex = -1;
+  for (let index = 0; index < Math.min(raw.length, 5); index += 1) {
+    const row = raw[index] ?? [];
     if (row.some((cell) => String(cell).includes("Question Type"))) {
-      headerIdx = i;
+      headerIndex = index;
       break;
     }
   }
-  if (headerIdx === -1) return [];
 
-  const headers: string[] = (raw[headerIdx] as any[]).map((h) =>
-    String(h).replace(/\s*\*$/, "").trim()
+  if (headerIndex === -1) {
+    return [];
+  }
+
+  const headers = (raw[headerIndex] ?? []).map((header) =>
+    String(header).replace(/\s*\*$/, "").trim()
   );
 
-  const col = (name: string) => {
-    const idx = headers.findIndex((h) =>
-      h.toLowerCase().includes(name.toLowerCase())
-    );
-    return idx;
-  };
+  const col = (name: string) =>
+    headers.findIndex((header) => header.toLowerCase().includes(name.toLowerCase()));
 
-  const C = {
+  const columns = {
     type: col("Question Type"),
     questionNo: col("Question No"),
     section: col("Section"),
@@ -148,82 +148,86 @@ function parseSheet(ws: XLSX.WorkSheet): RawRow[] {
   };
 
   const rows: RawRow[] = [];
-  const dataStart = headerIdx + 2; // skip the example/hints row after headers
+  const dataStart = headerIndex + 2;
 
-  for (let i = dataStart; i < raw.length; i++) {
-    const r = raw[i] as any[];
-    const stem = String(r[C.stem] ?? "").trim();
-    if (!stem) continue; // skip blank rows
+  for (let index = dataStart; index < raw.length; index += 1) {
+    const row = raw[index] ?? [];
+    const stem = String(row[columns.stem] ?? "").trim();
+    if (!stem) {
+      continue;
+    }
 
-    const marksRaw = r[C.marks];
-    const yearRaw = r[C.year];
-    const paperNoRaw = r[C.paperNo];
+    const marksRaw = row[columns.marks];
+    const yearRaw = row[columns.year];
+    const paperNumberRaw = row[columns.paperNo];
 
     rows.push({
-      type: norm(r[C.type]),
-      questionNo: String(r[C.questionNo] ?? "").trim(),
-      section: String(r[C.section] ?? "").trim(),
+      type: norm(row[columns.type]),
+      questionNo: String(row[columns.questionNo] ?? "").trim(),
+      section: String(row[columns.section] ?? "").trim(),
       stem,
-      optionA: String(r[C.optA] ?? "").trim(),
-      optionB: String(r[C.optB] ?? "").trim(),
-      optionC: String(r[C.optC] ?? "").trim(),
-      optionD: String(r[C.optD] ?? "").trim(),
-      correctAnswer: String(r[C.correct] ?? "").trim(),
-      explanation: String(r[C.explanation] ?? "").trim(),
+      optionA: String(row[columns.optA] ?? "").trim(),
+      optionB: String(row[columns.optB] ?? "").trim(),
+      optionC: String(row[columns.optC] ?? "").trim(),
+      optionD: String(row[columns.optD] ?? "").trim(),
+      correctAnswer: String(row[columns.correct] ?? "").trim(),
+      explanation: String(row[columns.explanation] ?? "").trim(),
       marks: marksRaw ? Number(marksRaw) || 1 : 1,
-      difficulty: norm(r[C.difficulty]),
-      allowShuffle: norm(r[C.shuffle]) === "yes",
-      examPath: String(r[C.examPath] ?? "").trim().toUpperCase(),
-      subjectCode: String(r[C.subjectCode] ?? "").trim().toUpperCase(),
-      topicCode: String(r[C.topicCode] ?? "").trim().toUpperCase(),
-      source: norm(r[C.source]),
-      paperType: norm(r[C.paperType]),
-      examMode: norm(r[C.examMode]),
+      difficulty: norm(row[columns.difficulty]),
+      allowShuffle: norm(row[columns.shuffle]) === "yes",
+      examPath: String(row[columns.examPath] ?? "").trim().toUpperCase(),
+      subjectCode: String(row[columns.subjectCode] ?? "").trim().toUpperCase(),
+      topicCode: String(row[columns.topicCode] ?? "").trim().toUpperCase(),
+      source: norm(row[columns.source]),
+      paperType: norm(row[columns.paperType]),
+      examMode: norm(row[columns.examMode]),
       year: yearRaw ? Number(yearRaw) || null : null,
-      paperNumber: paperNoRaw ? Number(paperNoRaw) || null : null,
-      poolTag: String(r[C.poolTag] ?? "").trim(),
-      language: String(r[C.language] ?? "English").trim() || "English",
-      rowIndex: i + 1, // 1-based for error messages
+      paperNumber: paperNumberRaw ? Number(paperNumberRaw) || null : null,
+      poolTag: String(row[columns.poolTag] ?? "").trim(),
+      language: String(row[columns.language] ?? "English").trim() || "English",
+      rowIndex: index + 1,
     });
   }
 
   return rows;
 }
 
-// ── Build options JSONB for MCQ / True-False ──────────────────
-function buildOptions(row: RawRow): { key: string; text: string }[] | null {
-  const t = row.type;
-  if (t === "mcq") {
-    const opts: { key: string; text: string }[] = [];
-    if (row.optionA) opts.push({ key: "A", text: row.optionA });
-    if (row.optionB) opts.push({ key: "B", text: row.optionB });
-    if (row.optionC) opts.push({ key: "C", text: row.optionC });
-    if (row.optionD) opts.push({ key: "D", text: row.optionD });
-    return opts;
+function buildOptions(row: RawRow): { key: string; text: string }[] {
+  if (row.type === "mcq") {
+    const options: { key: string; text: string }[] = [];
+    if (row.optionA) options.push({ key: "A", text: row.optionA });
+    if (row.optionB) options.push({ key: "B", text: row.optionB });
+    if (row.optionC) options.push({ key: "C", text: row.optionC });
+    if (row.optionD) options.push({ key: "D", text: row.optionD });
+    return options;
   }
-  if (t === "true_false") {
+
+  if (row.type === "true_false") {
     return [
       { key: "A", text: "True" },
       { key: "B", text: "False" },
     ];
   }
+
   return [];
 }
 
-// ── Route ─────────────────────────────────────────────────────
 export async function adminRoutes(app: FastifyInstance) {
-  // GET /admin/health
   app.get("/admin/health", async (request, reply) => {
-    if (!assertAdmin(request, reply)) return;
-    return { ok: true };
+    const admin = await requireAdmin(request, reply);
+    if (!admin) {
+      return;
+    }
+
+    return { ok: true, userId: admin.userId };
   });
 
-  // POST /admin/questions/upload
   app.post("/admin/questions/upload", async (request, reply) => {
-    if (!assertAdmin(request, reply)) return;
+    if (!(await requireAdmin(request, reply))) {
+      return;
+    }
 
-    // Receive multipart file
-    const data = await (request as any).file();
+    const data = await (request as MultipartRequest).file();
     if (!data) {
       return reply.status(400).send({ error: "No file uploaded" });
     }
@@ -234,15 +238,14 @@ export async function adminRoutes(app: FastifyInstance) {
     }
     const buffer = Buffer.concat(chunks);
 
-    // Parse workbook
-    let wb: XLSX.WorkBook;
+    let workbook: XLSX.WorkBook;
     try {
-      wb = XLSX.read(buffer, { type: "buffer" });
+      workbook = XLSX.read(buffer, { type: "buffer" });
     } catch {
       return reply.status(400).send({ error: "Could not parse XLSX file" });
     }
 
-    const questionsSheet = wb.Sheets["Questions"];
+    const questionsSheet = workbook.Sheets.Questions;
     if (!questionsSheet) {
       return reply.status(400).send({
         error: "Workbook must contain a sheet named 'Questions'",
@@ -254,27 +257,24 @@ export async function adminRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: "No data rows found in Questions sheet" });
     }
 
-    // ── Pre-load lookup tables ────────────────────────────────
-    const { data: subjects } = await supabaseAdmin
-      .from("subjects")
-      .select("id, code");
-    const { data: topics } = await supabaseAdmin
-      .from("topics")
-      .select("id, subject_id");
+    const { data: subjectData } = await supabaseAdmin.from("subjects").select("id, code");
+    const { data: topicData } = await supabaseAdmin.from("topics").select("id, subject_id, code, exam_path");
+
+    const subjects = (subjectData ?? []) as SubjectRow[];
+    const topics = (topicData ?? []) as TopicRow[];
 
     const subjectByCode = new Map(
-      (subjects ?? []).map((s: any) => [s.code as string, s.id as string])
+      subjects.flatMap((subject) => (subject.code ? [[subject.code, subject.id] as const] : []))
+    );
+    const topicByCode = new Map(
+      topics.flatMap((topic) => (topic.code ? [[topic.code, topic] as const] : []))
     );
 
-    // exam_papers cache: key = "source|paperType|examMode|examPath|subjectId|year|paperNo"
     const paperCache = new Map<string, string>();
-
     const imported: number[] = [];
     const errors: { row: number; reason: string }[] = [];
 
-    // ── Process each row ──────────────────────────────────────
     for (const row of rows) {
-      // Validate required fields
       const mappedType = TYPE_MAP[row.type];
       if (!mappedType) {
         errors.push({ row: row.rowIndex, reason: `Unknown question type: "${row.type}"` });
@@ -290,12 +290,19 @@ export async function adminRoutes(app: FastifyInstance) {
         errors.push({ row: row.rowIndex, reason: "Question Text is required" });
         continue;
       }
+
       if (!row.correctAnswer) {
         errors.push({ row: row.rowIndex, reason: "Correct Answer is required" });
         continue;
       }
+
       if (!row.subjectCode) {
         errors.push({ row: row.rowIndex, reason: "Subject Code is required" });
+        continue;
+      }
+
+      if (!row.topicCode) {
+        errors.push({ row: row.rowIndex, reason: "Topic Code is required" });
         continue;
       }
 
@@ -305,31 +312,28 @@ export async function adminRoutes(app: FastifyInstance) {
         continue;
       }
 
-      // Resolve topic — find topic in this subject whose name or id matches the topic code
-      // Topics in our DB don't have a code column yet; we match on the first topic under
-      // this subject if no direct match, and log it. This will be improved when
-      // subtopic codes are fully mapped.
-      // For now we match on exact topic_id if row.topicCode is a UUID, otherwise
-      // we use the first topic under the subject as a fallback and log a warning.
-      let topicId: string | null = null;
-      const subjectTopics = (topics ?? []).filter(
-        (t: any) => t.subject_id === subjectId
-      );
-
-      if (/^[0-9a-f-]{36}$/i.test(row.topicCode)) {
-        // raw UUID provided
-        topicId = row.topicCode;
-      } else if (subjectTopics.length > 0) {
-        // Best-effort: use first topic for this subject until topic codes are added
-        topicId = subjectTopics[0].id;
-      }
-
-      if (!topicId) {
-        errors.push({ row: row.rowIndex, reason: `No topics found for subject ${row.subjectCode}` });
+      const topic = topicByCode.get(row.topicCode);
+      if (!topic) {
+        errors.push({ row: row.rowIndex, reason: `Unknown Topic Code: ${row.topicCode}` });
         continue;
       }
 
-      // ── Resolve / create exam_paper ───────────────────────
+      if (topic.subject_id !== subjectId) {
+        errors.push({
+          row: row.rowIndex,
+          reason: `Topic Code ${row.topicCode} does not belong to subject ${row.subjectCode}`,
+        });
+        continue;
+      }
+
+      if (topic.exam_path && row.examPath && topic.exam_path !== row.examPath) {
+        errors.push({
+          row: row.rowIndex,
+          reason: `Topic Code ${row.topicCode} is for ${topic.exam_path}, not ${row.examPath}`,
+        });
+        continue;
+      }
+
       let examPaperId: string | null = null;
 
       if (mappedPaperType !== "question_pool") {
@@ -337,32 +341,35 @@ export async function adminRoutes(app: FastifyInstance) {
           mappedSource,
           mappedPaperType,
           mappedExamMode,
-          row.examPath,
+          row.examPath || "null",
           subjectId,
           row.year ?? "null",
           row.paperNumber ?? "null",
         ].join("|");
 
         if (paperCache.has(paperKey)) {
-          examPaperId = paperCache.get(paperKey)!;
+          examPaperId = paperCache.get(paperKey) ?? null;
         } else {
-          // Check if it already exists
           let query = supabaseAdmin
             .from("exam_papers")
             .select("id")
             .eq("source_type", mappedSource)
             .eq("paper_type", mappedPaperType)
+            .eq("exam_mode", mappedExamMode)
             .eq("subject_id", subjectId);
 
-          if (row.year) query = query.eq("year", row.year);
-          if (row.paperNumber) query = query.eq("paper_number", row.paperNumber);
+          query = row.examPath ? query.eq("exam_path", row.examPath) : query.is("exam_path", null);
+          query = row.year ? query.eq("year", row.year) : query.is("year", null);
+          query = row.paperNumber
+            ? query.eq("paper_number", row.paperNumber)
+            : query.is("paper_number", null);
 
-          const { data: existing } = await query.limit(1).maybeSingle();
+          const { data: existingPaper } = await query.limit(1).maybeSingle();
 
-          if (existing) {
-            examPaperId = existing.id;
+          if (existingPaper) {
+            examPaperId = existingPaper.id;
           } else {
-            const { data: newPaper, error: paperErr } = await supabaseAdmin
+            const { data: newPaper, error: paperError } = await supabaseAdmin
               .from("exam_papers")
               .insert({
                 exam_path: row.examPath || null,
@@ -379,33 +386,33 @@ export async function adminRoutes(app: FastifyInstance) {
               .select("id")
               .single();
 
-            if (paperErr || !newPaper) {
+            if (paperError || !newPaper) {
               errors.push({
                 row: row.rowIndex,
-                reason: `Could not create exam_paper: ${paperErr?.message}`,
+                reason: `Could not create exam_paper: ${paperError?.message}`,
               });
               continue;
             }
+
             examPaperId = newPaper.id;
           }
-          paperCache.set(paperKey, examPaperId!);
+
+          if (examPaperId) {
+            paperCache.set(paperKey, examPaperId);
+          }
         }
       }
 
-      // ── Build correct_option value ────────────────────────
-      // For True/False questions normalise "True"→"A", "False"→"B"
       let correctOption = row.correctAnswer.trim();
       if (mappedType === "true_false") {
-        correctOption =
-          correctOption.toLowerCase() === "true" ? "A" : "B";
+        correctOption = correctOption.toLowerCase() === "true" ? "A" : "B";
       }
 
-      // ── Insert question ───────────────────────────────────
       const options = buildOptions(row);
-      const { data: newQ, error: qErr } = await supabaseAdmin
+      const { data: newQuestion, error: questionError } = await supabaseAdmin
         .from("questions")
         .insert({
-          topic_id: topicId,
+          topic_id: topic.id,
           stem: row.stem,
           options,
           correct_option: correctOption,
@@ -424,30 +431,26 @@ export async function adminRoutes(app: FastifyInstance) {
         .select("id")
         .single();
 
-      if (qErr || !newQ) {
+      if (questionError || !newQuestion) {
         errors.push({
           row: row.rowIndex,
-          reason: `DB insert failed: ${qErr?.message}`,
+          reason: `DB insert failed: ${questionError?.message}`,
         });
         continue;
       }
 
-      // ── Link to exam_paper if applicable ──────────────────
       if (examPaperId) {
-        const { error: pqErr } = await supabaseAdmin
-          .from("paper_questions")
-          .insert({
-            exam_paper_id: examPaperId,
-            question_id: newQ.id,
-            section: row.section || null,
-            order_index: imported.length,
-          });
+        const { error: paperQuestionError } = await supabaseAdmin.from("paper_questions").insert({
+          exam_paper_id: examPaperId,
+          question_id: newQuestion.id,
+          section: row.section || null,
+          order_index: imported.length,
+        });
 
-        if (pqErr) {
-          // Non-fatal — question was saved, just not linked to paper
+        if (paperQuestionError) {
           errors.push({
             row: row.rowIndex,
-            reason: `Question saved but paper link failed: ${pqErr.message}`,
+            reason: `Question saved but paper link failed: ${paperQuestionError.message}`,
           });
         }
       }

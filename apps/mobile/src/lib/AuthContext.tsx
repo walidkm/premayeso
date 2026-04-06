@@ -11,18 +11,27 @@ import {
   loadSession,
   saveSession,
   clearSession,
+  loadExamPath,
+  saveExamPath,
+  clearExamPath,
 } from "./auth";
-import { refreshTokens } from "./api";
+import { refreshTokens, setExamPathApi } from "./api";
 
 type AuthState =
   | { status: "loading" }
   | { status: "unauthenticated" }
-  | { status: "authenticated"; user: AuthUser; accessToken: string };
+  | {
+      status: "authenticated";
+      user: AuthUser;
+      accessToken: string;
+      examPath: string | null;
+    };
 
 type AuthContextValue = {
   state: AuthState;
   signIn: (session: AuthSession) => Promise<void>;
   signOut: () => Promise<void>;
+  setExamPath: (path: string) => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -33,28 +42,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     (async () => {
       try {
-        const session = await loadSession();
+        const [session, examPath] = await Promise.all([
+          loadSession(),
+          loadExamPath(),
+        ]);
+
         if (!session) {
           setState({ status: "unauthenticated" });
           return;
         }
 
-        // Try to refresh proactively so we have a fresh token on boot
+        // Refresh tokens proactively on boot
         try {
           const tokens = await refreshTokens(session.refreshToken);
-          const updated: AuthSession = {
-            ...tokens,
-            user: session.user,
-          };
+          const updated: AuthSession = { ...tokens, user: session.user };
           await saveSession(updated);
           setState({
             status: "authenticated",
             user: updated.user,
             accessToken: updated.accessToken,
+            examPath,
           });
         } catch {
-          // Refresh failed (expired 30-day token) → force login
           await clearSession();
+          await clearExamPath();
           setState({ status: "unauthenticated" });
         }
       } catch {
@@ -65,20 +76,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signIn = async (session: AuthSession) => {
     await saveSession(session);
+    const examPath = await loadExamPath();
     setState({
       status: "authenticated",
       user: session.user,
       accessToken: session.accessToken,
+      examPath,
     });
   };
 
   const signOut = async () => {
     await clearSession();
+    await clearExamPath();
     setState({ status: "unauthenticated" });
   };
 
+  const setExamPath = async (path: string) => {
+    await saveExamPath(path);
+    await setExamPathApi(path);
+    setState((prev) => {
+      if (prev.status !== "authenticated") return prev;
+      return { ...prev, examPath: path };
+    });
+  };
+
   return (
-    <AuthContext.Provider value={{ state, signIn, signOut }}>
+    <AuthContext.Provider value={{ state, signIn, signOut, setExamPath }}>
       {children}
     </AuthContext.Provider>
   );

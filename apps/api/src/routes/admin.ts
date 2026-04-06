@@ -467,4 +467,110 @@ export async function adminRoutes(app: FastifyInstance) {
       errorDetails: errors,
     });
   });
+
+  // ── Settings ──────────────────────────────────────────────────
+
+  // GET /admin/settings — returns all rows; secret values are masked
+  app.get("/admin/settings", async (request, reply) => {
+    if (!(await requireAdmin(request, reply))) return;
+
+    const { data, error } = await supabaseAdmin
+      .from("settings")
+      .select("key, value, description, is_secret, updated_at")
+      .order("key");
+
+    if (error) return reply.status(500).send({ error: error.message });
+
+    // Mask non-empty secrets so they never leave the server in plain text
+    const safe = (data ?? []).map((row: {
+      key: string; value: string; description: string | null;
+      is_secret: boolean; updated_at: string;
+    }) => ({
+      ...row,
+      value: row.is_secret && row.value ? "••••••••" : row.value,
+    }));
+
+    return safe;
+  });
+
+  // PATCH /admin/settings — body: { key: string; value: string }[]
+  app.patch<{ Body: { key: string; value: string }[] }>(
+    "/admin/settings",
+    async (request, reply) => {
+      if (!(await requireAdmin(request, reply))) return;
+
+      const updates = request.body;
+      if (!Array.isArray(updates) || updates.length === 0) {
+        return reply.status(400).send({ error: "Body must be a non-empty array of {key, value}" });
+      }
+
+      const errors: string[] = [];
+      for (const { key, value } of updates) {
+        // Skip masked values — means client didn't change that secret
+        if (value === "••••••••") continue;
+
+        const { error } = await supabaseAdmin
+          .from("settings")
+          .update({ value, updated_at: new Date().toISOString() })
+          .eq("key", key);
+
+        if (error) errors.push(`${key}: ${error.message}`);
+      }
+
+      if (errors.length) return reply.status(500).send({ errors });
+      return { saved: true };
+    }
+  );
+
+  // POST /admin/settings/test-sms — body: { phone: string }
+  // Sends a test OTP via Africa's Talking using the saved settings
+  app.post<{ Body: { phone: string } }>(
+    "/admin/settings/test-sms",
+    async (request, reply) => {
+      if (!(await requireAdmin(request, reply))) return;
+
+      const { phone } = request.body ?? {};
+      if (!phone) return reply.status(400).send({ error: "phone required" });
+
+      // Read AT credentials from settings table
+      const { data } = await supabaseAdmin
+        .from("settings")
+        .select("key, value")
+        .in("key", ["at_api_key", "at_username", "at_enabled"]);
+
+      const map = Object.fromEntries(
+        (data ?? []).map((r: { key: string; value: string }) => [r.key, r.value])
+      );
+
+      if (map.at_enabled !== "true") {
+        return reply.status(400).send({ error: "Africa's Talking is not enabled in settings" });
+      }
+      if (!map.at_api_key) {
+        return reply.status(400).send({ error: "AT API key is not configured" });
+      }
+
+      try {
+        const response = await fetch(
+          "https://api.africastalking.com/version1/messaging",
+          {
+            method: "POST",
+            headers: {
+              apiKey: map.at_api_key,
+              Accept: "application/json",
+              "Content-Type": "application/x-www-form-urlencoded",
+            },
+            body: new URLSearchParams({
+              username: map.at_username ?? "sandbox",
+              to: phone,
+              message: "PreMayeso test message — SMS integration working ✓",
+            }),
+          }
+        );
+        const body = await response.json();
+        return { ok: response.ok, atResponse: body };
+      } catch (err) {
+        return reply.status(500).send({ error: String(err) });
+      }
+    }
+  );
 }

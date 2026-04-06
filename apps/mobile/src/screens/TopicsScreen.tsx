@@ -47,6 +47,18 @@ export default function TopicsScreen({ route, navigation }: Props) {
       data={topics}
       keyExtractor={(item) => item.id}
       contentContainerStyle={s.list}
+      ListHeaderComponent={
+        <TouchableOpacity
+          style={s.pastPapersBtn}
+          onPress={() => navigation.navigate("Papers", { subject })}
+        >
+          <View>
+            <Text style={s.pastPapersBtnTitle}>📄 Past Papers</Text>
+            <Text style={s.pastPapersBtnSub}>MANEB past paper drills for {subject.name}</Text>
+          </View>
+          <Text style={s.pastPapersArrow}>→</Text>
+        </TouchableOpacity>
+      }
       renderItem={({ item }) => (
         <View style={s.card}>
           <TouchableOpacity
@@ -75,6 +87,18 @@ const s = StyleSheet.create({
   errorText: { color: "red" },
   emptyText: { color: "#999" },
   list: { padding: 16, gap: 12 },
+  pastPapersBtn: {
+    backgroundColor: "#111",
+    borderRadius: 14,
+    padding: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 4,
+  },
+  pastPapersBtnTitle: { fontSize: 15, fontWeight: "700", color: "#fff" },
+  pastPapersBtnSub:   { fontSize: 12, color: "#aaa", marginTop: 2 },
+  pastPapersArrow:    { fontSize: 18, color: "#fff" },
   card: {
     backgroundColor: "#fff",
     borderRadius: 12,
@@ -86,7 +110,7 @@ const s = StyleSheet.create({
     elevation: 2,
   },
   cardTitle: { fontSize: 16, fontWeight: "600", marginBottom: 4 },
-  cardDesc: { fontSize: 14, color: "#666" },
+  cardDesc:  { fontSize: 14, color: "#666" },
   quizBtn: {
     backgroundColor: "#111",
     borderRadius: 8,

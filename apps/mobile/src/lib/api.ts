@@ -23,10 +23,22 @@ export type Topic = {
   order_index: number;
 };
 
-export async function getSubjects(): Promise<Subject[]> {
-  const res = await fetch(`${API_URL}/subjects`);
+export async function getSubjects(examPath?: string): Promise<Subject[]> {
+  const url = examPath
+    ? `${API_URL}/subjects?exam_path=${examPath}`
+    : `${API_URL}/subjects`;
+  const res = await fetch(url);
   if (!res.ok) throw new Error("Failed to fetch subjects");
   return res.json();
+}
+
+export async function setExamPathApi(examPath: string): Promise<void> {
+  const extra = await authHeaders();
+  await fetch(`${API_URL}/api/v1/auth/exam-path`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...extra },
+    body: JSON.stringify({ exam_path: examPath }),
+  });
 }
 
 export type Lesson = {
@@ -60,6 +72,9 @@ export type Question = {
   stem: string;
   options: QuestionOption[];
   explanation: string | null;
+  hints: string[] | null;
+  tier_gate: "free" | "premium" | null;
+  marks: number | null;
   source: QuestionSource | null;
 };
 
@@ -107,6 +122,46 @@ export async function saveQuizAttempt(attempt: {
     headers: { "Content-Type": "application/json", ...extra },
     body: JSON.stringify(attempt),
   });
+}
+
+// ── Past papers ───────────────────────────────────────────────
+
+export type ExamPaper = {
+  id: string;
+  title: string | null;
+  year: number | null;
+  paper_number: number | null;
+  source_type: string | null;
+  paper_type: string;
+  exam_mode: string;
+  exam_path: string | null;
+  question_count: number;
+};
+
+export type PaperQuestion = {
+  order_index: number;
+  section: string | null;
+  question: Question;
+};
+
+export async function getPapers(
+  subjectId: string,
+  examPath?: string
+): Promise<ExamPaper[]> {
+  const url = examPath
+    ? `${API_URL}/subjects/${subjectId}/papers?exam_path=${examPath}`
+    : `${API_URL}/subjects/${subjectId}/papers`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("Failed to fetch papers");
+  return res.json();
+}
+
+export async function getPaperQuestions(
+  paperId: string
+): Promise<PaperQuestion[]> {
+  const res = await fetch(`${API_URL}/papers/${paperId}/questions`);
+  if (!res.ok) throw new Error("Failed to fetch paper questions");
+  return res.json();
 }
 
 // ── Auth API ──────────────────────────────────────────────────

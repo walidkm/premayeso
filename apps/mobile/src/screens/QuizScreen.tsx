@@ -17,6 +17,7 @@ import {
   QuestionSource,
 } from "../lib/api";
 import { useAuth } from "../lib/AuthContext";
+import MathText from "../components/MathText";
 import { RootStackParamList } from "../../App";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Quiz">;
@@ -30,9 +31,9 @@ type AnswerRecord = {
 type Phase = "question" | "feedback" | "results";
 
 function formatSource(source: QuestionSource): string {
-  const parts: string[] = [source.school];
-  if (source.term) parts.push(source.term);
-  parts.push(String(source.year));
+  const parts: string[] = [];
+  if (source.school) parts.push(source.school);
+  if (source.year) parts.push(String(source.year));
   if (source.paper_number) parts.push(`Paper ${source.paper_number}`);
   return parts.join(" · ");
 }
@@ -41,6 +42,9 @@ export default function QuizScreen({ route, navigation }: Props) {
   const { topic } = route.params;
   const { state } = useAuth();
   const userId = state.status === "authenticated" ? state.user.id : null;
+  // Admin accounts can see all hints; free users see only the first hint
+  const isPremium =
+    state.status === "authenticated" && state.user.role === "admin";
 
   const [questions, setQuestions] = useState<Question[]>([]);
   const [loading, setLoading] = useState(true);
@@ -53,6 +57,9 @@ export default function QuizScreen({ route, navigation }: Props) {
   const [checking, setChecking] = useState(false);
   const [answers, setAnswers] = useState<AnswerRecord[]>([]);
 
+  // Hint ladder state
+  const [hintsShown, setHintsShown] = useState(0);
+
   useEffect(() => {
     getQuestions(topic.id)
       .then(setQuestions)
@@ -63,11 +70,9 @@ export default function QuizScreen({ route, navigation }: Props) {
   if (loading) {
     return <View style={s.center}><ActivityIndicator size="large" /></View>;
   }
-
   if (error) {
     return <View style={s.center}><Text style={s.err}>{error}</Text></View>;
   }
-
   if (questions.length === 0) {
     return (
       <View style={s.center}>
@@ -76,7 +81,8 @@ export default function QuizScreen({ route, navigation }: Props) {
     );
   }
 
-  // Results screen
+  // ── Results screen ────────────────────────────────────────────
+
   if (phase === "results") {
     const score = answers.filter((a) => a.correct).length;
     const total = answers.length;
@@ -97,31 +103,32 @@ export default function QuizScreen({ route, navigation }: Props) {
           const q = questions[i];
           return (
             <View key={a.question_id} style={s.reviewRow}>
-              <Text style={s.reviewStem}>{q.stem}</Text>
+              <MathText text={q.stem} fontSize={14} color="#333" />
               <Text style={a.correct ? s.correctText : s.incorrectText}>
-                {a.correct ? "Correct" : `Incorrect — answer: ${a.chosen}`}
+                {a.correct ? "✓ Correct" : `✗ Your answer: ${a.chosen}`}
               </Text>
             </View>
           );
         })}
 
-        <TouchableOpacity
-          style={s.btn}
-          onPress={() => navigation.goBack()}
-        >
+        <TouchableOpacity style={s.btn} onPress={() => navigation.goBack()}>
           <Text style={s.btnText}>Back to Topics</Text>
         </TouchableOpacity>
       </ScrollView>
     );
   }
 
+  // ── Question screen ───────────────────────────────────────────
+
   const question = questions[index];
+  const hints = question.hints ?? [];
+  const maxHints = isPremium ? hints.length : Math.min(1, hints.length);
+  const canShowMoreHint = hintsShown < maxHints;
 
   const handleOptionPress = async (key: string) => {
     if (checking || phase === "feedback") return;
     setChosen(key);
     setChecking(true);
-
     try {
       const res = await checkAnswer(question.id, key);
       setResult(res);
@@ -139,11 +146,9 @@ export default function QuizScreen({ route, navigation }: Props) {
 
   const handleNext = async () => {
     const isLast = index === questions.length - 1;
-
     if (isLast) {
-      const finalAnswers = answers;
+      const finalAnswers = [...answers];
       const score = finalAnswers.filter((a) => a.correct).length;
-
       await saveQuizAttempt({
         user_id: userId,
         topic_id: topic.id,
@@ -151,12 +156,12 @@ export default function QuizScreen({ route, navigation }: Props) {
         total: finalAnswers.length,
         answers: finalAnswers,
       });
-
       setPhase("results");
     } else {
       setIndex((i) => i + 1);
       setChosen(null);
       setResult(null);
+      setHintsShown(0);
       setPhase("question");
     }
   };
@@ -172,16 +177,16 @@ export default function QuizScreen({ route, navigation }: Props) {
 
   return (
     <ScrollView contentContainerStyle={s.container}>
-      <Text style={s.counter}>
-        {index + 1} / {questions.length}
-      </Text>
+      <Text style={s.counter}>{index + 1} / {questions.length}</Text>
 
-      <Text style={s.stem}>{question.stem}</Text>
+      {/* Question stem — supports LaTeX */}
+      <MathText text={question.stem} fontSize={18} color="#111" />
 
       {question.source && (
         <Text style={s.source}>{formatSource(question.source)}</Text>
       )}
 
+      {/* Options */}
       <View style={s.options}>
         {question.options.map((opt) => (
           <TouchableOpacity
@@ -191,18 +196,55 @@ export default function QuizScreen({ route, navigation }: Props) {
             disabled={phase === "feedback" || checking}
           >
             <Text style={s.optionKey}>{opt.key}.</Text>
-            <Text style={s.optionText}>{opt.text}</Text>
+            <View style={{ flex: 1 }}>
+              <MathText text={opt.text} fontSize={15} color="#333" />
+            </View>
           </TouchableOpacity>
         ))}
       </View>
 
+      {/* ── Hint ladder ─────────────────────────────────────── */}
+      {hints.length > 0 && phase === "question" && (
+        <View style={s.hintBox}>
+          {hintsShown > 0 && (
+            <View style={s.hintList}>
+              {hints.slice(0, hintsShown).map((h, i) => (
+                <View key={i} style={s.hintRow}>
+                  <Text style={s.hintNum}>Hint {i + 1}</Text>
+                  <Text style={s.hintText}>{h}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {canShowMoreHint && (
+            <TouchableOpacity
+              style={s.hintBtn}
+              onPress={() => setHintsShown((n) => n + 1)}
+            >
+              <Text style={s.hintBtnText}>
+                💡 {hintsShown === 0 ? "Show hint" : "Next hint"}
+              </Text>
+            </TouchableOpacity>
+          )}
+
+          {!canShowMoreHint && !isPremium && hints.length > 1 && (
+            <Text style={s.hintUpgrade}>
+              🔒 Upgrade to Premium to unlock {hints.length - 1} more hint
+              {hints.length - 1 > 1 ? "s" : ""}
+            </Text>
+          )}
+        </View>
+      )}
+
+      {/* Feedback */}
       {phase === "feedback" && (
         <View style={s.feedback}>
           <Text style={result?.correct ? s.correctText : s.incorrectText}>
             {result?.correct ? "Correct!" : "Incorrect"}
           </Text>
           {result?.explanation && (
-            <Text style={s.explanation}>{result.explanation}</Text>
+            <MathText text={result.explanation} fontSize={14} color="#555" />
           )}
           <TouchableOpacity style={s.btn} onPress={handleNext}>
             <Text style={s.btnText}>
@@ -221,7 +263,6 @@ const s = StyleSheet.create({
   empty: { color: "#999" },
   container: { padding: 20, gap: 16 },
   counter: { fontSize: 13, color: "#999", textAlign: "right" },
-  stem: { fontSize: 18, fontWeight: "600", lineHeight: 26 },
   source: { fontSize: 12, color: "#888", fontStyle: "italic" },
   options: { gap: 10, marginTop: 8 },
   option: {
@@ -232,6 +273,7 @@ const s = StyleSheet.create({
     borderRadius: 10,
     padding: 14,
     backgroundColor: "#fff",
+    alignItems: "flex-start",
   },
   optionSelected: {
     flexDirection: "row",
@@ -241,6 +283,7 @@ const s = StyleSheet.create({
     borderRadius: 10,
     padding: 14,
     backgroundColor: "#f5f5f5",
+    alignItems: "flex-start",
   },
   optionCorrect: {
     flexDirection: "row",
@@ -250,6 +293,7 @@ const s = StyleSheet.create({
     borderRadius: 10,
     padding: 14,
     backgroundColor: "#f0fdf4",
+    alignItems: "flex-start",
   },
   optionWrong: {
     flexDirection: "row",
@@ -259,13 +303,35 @@ const s = StyleSheet.create({
     borderRadius: 10,
     padding: 14,
     backgroundColor: "#fef2f2",
+    alignItems: "flex-start",
   },
   optionKey: { fontWeight: "700", fontSize: 15, color: "#333", minWidth: 20 },
-  optionText: { fontSize: 15, color: "#333", flex: 1 },
+  // ── Hints ──────────────────────────────────────────────────
+  hintBox: {
+    borderWidth: 1,
+    borderColor: "#fde68a",
+    borderRadius: 12,
+    backgroundColor: "#fffbeb",
+    padding: 14,
+    gap: 10,
+  },
+  hintList: { gap: 8 },
+  hintRow: { gap: 2 },
+  hintNum: { fontSize: 11, fontWeight: "700", color: "#92400e", textTransform: "uppercase" },
+  hintText: { fontSize: 14, color: "#78350f", lineHeight: 20 },
+  hintBtn: {
+    alignSelf: "flex-start",
+    backgroundColor: "#fcd34d",
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  hintBtnText: { fontSize: 13, fontWeight: "600", color: "#78350f" },
+  hintUpgrade: { fontSize: 12, color: "#a16207", fontStyle: "italic" },
+  // ── Feedback ───────────────────────────────────────────────
   feedback: { gap: 10, marginTop: 8 },
   correctText: { fontSize: 16, fontWeight: "700", color: "#16a34a" },
   incorrectText: { fontSize: 16, fontWeight: "700", color: "#dc2626" },
-  explanation: { fontSize: 14, color: "#555", lineHeight: 22 },
   btn: {
     backgroundColor: "#111",
     borderRadius: 10,
@@ -274,14 +340,9 @@ const s = StyleSheet.create({
     marginTop: 4,
   },
   btnText: { color: "#fff", fontWeight: "600", fontSize: 15 },
+  // ── Results ────────────────────────────────────────────────
   resultsTitle: { fontSize: 24, fontWeight: "700", textAlign: "center" },
   score: { fontSize: 48, fontWeight: "800", textAlign: "center", color: "#111" },
   scoreLabel: { fontSize: 16, color: "#666", textAlign: "center" },
-  reviewRow: {
-    borderTopWidth: 1,
-    borderColor: "#eee",
-    paddingTop: 12,
-    gap: 4,
-  },
-  reviewStem: { fontSize: 14, color: "#333" },
+  reviewRow: { borderTopWidth: 1, borderColor: "#eee", paddingTop: 12, gap: 4 },
 });

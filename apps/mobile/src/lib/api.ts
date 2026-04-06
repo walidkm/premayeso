@@ -45,6 +45,8 @@ export type Lesson = {
   id: string;
   title: string;
   content: string | null;
+  video_url: string | null;
+  content_type: "text" | "video" | "mixed";
   order_index: number;
 };
 

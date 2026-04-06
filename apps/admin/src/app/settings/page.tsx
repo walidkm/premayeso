@@ -46,6 +46,11 @@ export default async function SettingsPage() {
               <Link href="/" className="rounded-lg px-3 py-1.5 text-sm font-medium text-zinc-500 hover:text-zinc-900 hover:bg-zinc-50 transition">
                 Dashboard
               </Link>
+              {(adminSession.user.role === "admin" || adminSession.user.role === "super_admin" || adminSession.user.role === "school_admin") && (
+                <Link href="/content" className="rounded-lg px-3 py-1.5 text-sm font-medium text-zinc-500 hover:text-zinc-900 hover:bg-zinc-50 transition">
+                  Content
+                </Link>
+              )}
               <Link href="/settings" className="rounded-lg px-3 py-1.5 text-sm font-medium text-zinc-900 bg-zinc-100">
                 Integrations
               </Link>

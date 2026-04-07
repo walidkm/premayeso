@@ -1,164 +1,203 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
-import type { ApiErrorResponse, ContentTreeSubjectDto } from "../lib/content";
+import { type FormEvent, useEffect, useState } from "react";
+import { requestJson } from "@/lib/adminApi";
+import { FORM_LEVEL_OPTIONS, type ContentTreeTopicDto } from "@/lib/content";
+import {
+  Field,
+  dangerButtonClassName,
+  inputClassName,
+  primaryButtonClassName,
+} from "@/components/AdminForm";
 
-const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000").replace(/\/$/, "");
-
-type TopicData = {
+type TopicFormState = {
   name: string;
   description: string;
   code: string;
   form_level: string;
-  exam_path: string;
   order_index: number;
 };
 
 type Props = {
-  topicId: string | null; // null = new
-  subjectId: string;      // required to POST
   token: string;
+  subjectId: string;
+  subjectName: string;
+  subjectExamPath: string;
+  topic: ContentTreeTopicDto | null;
   onSaved: () => void;
-  onDeleted?: () => void;
+  onDeleted: () => void;
 };
 
-export function TopicForm({ topicId, subjectId, token, onSaved, onDeleted }: Props) {
-  const isNew = topicId === null;
-  const [form, setForm] = useState<TopicData>({
-    name: "",
-    description: "",
-    code: "",
-    form_level: "",
-    exam_path: "",
-    order_index: 0,
-  });
+const EMPTY_FORM: TopicFormState = {
+  name: "",
+  description: "",
+  code: "",
+  form_level: "",
+  order_index: 0,
+};
+
+export function TopicForm({
+  token,
+  subjectId,
+  subjectName,
+  subjectExamPath,
+  topic,
+  onSaved,
+  onDeleted,
+}: Props) {
+  const [form, setForm] = useState<TopicFormState>(EMPTY_FORM);
+  const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!topicId) return;
-    // Fetch from tree and find the topic
-    fetch(`${API_URL}/admin/content/tree`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((r) => r.json() as Promise<ContentTreeSubjectDto[]>)
-      .then((subjects) => {
-        for (const s of subjects) {
-          const t = (s.topics ?? []).find((topic) => topic.id === topicId);
-          if (t) {
-            setForm({
-              name: t.name ?? "",
-              description: t.description ?? "",
-              code: t.code ?? "",
-              form_level: t.form_level ?? "",
-              exam_path: t.exam_path ?? "",
-              order_index: t.order_index ?? 0,
-            });
-            break;
-          }
-        }
-      })
-      .catch(() => {});
-  }, [topicId, token]);
+    if (!topic) {
+      setForm(EMPTY_FORM);
+      setError(null);
+      return;
+    }
 
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault();
+    setForm({
+      name: topic.name ?? "",
+      description: topic.description ?? "",
+      code: topic.code ?? "",
+      form_level: topic.form_level ?? "",
+      order_index: topic.order_index ?? 0,
+    });
+    setError(null);
+  }, [topic]);
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
     setSaving(true);
     setError(null);
-    const url = isNew ? `${API_URL}/admin/topics` : `${API_URL}/admin/topics/${topicId}`;
-    const method = isNew ? "POST" : "PATCH";
-    const body = isNew ? { ...form, subject_id: subjectId } : form;
-    const res = await fetch(url, {
-      method,
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) {
-      const body: ApiErrorResponse = await res.json().catch(() => ({}));
-      setError(body.error ?? "Save failed");
-    } else {
+
+    try {
+      await requestJson(topic ? `/admin/topics/${topic.id}` : "/admin/topics", {
+        method: topic ? "PATCH" : "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          ...form,
+          subject_id: subjectId,
+          exam_path: subjectExamPath,
+        }),
+      });
       onSaved();
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Save failed");
+    } finally {
+      setSaving(false);
     }
-    setSaving(false);
   }
 
   async function handleDelete() {
-    if (!topicId || !confirm("Delete this topic and ALL its lessons? This cannot be undone.")) return;
-    setDeleting(true);
-    const res = await fetch(`${API_URL}/admin/topics/${topicId}`, {
-      method: "DELETE",
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) {
-      const body: ApiErrorResponse = await res.json().catch(() => ({}));
-      setError(body.error ?? "Delete failed");
-    } else {
-      onDeleted?.();
+    if (!topic || !window.confirm("Delete this topic and all of its lessons? This cannot be undone.")) {
+      return;
     }
-    setDeleting(false);
+
+    setDeleting(true);
+    setError(null);
+    try {
+      await requestJson(`/admin/topics/${topic.id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      onDeleted();
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Delete failed");
+    } finally {
+      setDeleting(false);
+    }
   }
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-      <h2 className="text-base font-semibold text-zinc-900">{isNew ? "New Topic" : "Edit Topic"}</h2>
+      <div>
+        <h3 className="text-lg font-semibold tracking-tight text-zinc-950">
+          {topic ? "Edit Topic" : "Create Topic"}
+        </h3>
+        <p className="mt-1 text-sm text-zinc-500">
+          Topics inherit their exam level from the selected subject.
+        </p>
+      </div>
 
-      <Field label="Name *">
-        <input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
-          className={inputCls} />
-      </Field>
-      <Field label="Description">
-        <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })}
-          rows={3} className={inputCls} />
-      </Field>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Subject">
+          <input value={subjectName} readOnly className={`${inputClassName} bg-zinc-50 text-zinc-500`} />
+        </Field>
+        <Field label="Exam Level">
+          <input value={subjectExamPath} readOnly className={`${inputClassName} bg-zinc-50 text-zinc-500`} />
+        </Field>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Name">
+          <input
+            required
+            value={form.name}
+            onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
+            className={inputClassName}
+          />
+        </Field>
         <Field label="Code">
-          <input value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })}
-            className={inputCls} />
+          <input
+            value={form.code}
+            onChange={(event) => setForm((current) => ({ ...current, code: event.target.value }))}
+            className={inputClassName}
+          />
         </Field>
+      </div>
+
+      <Field label="Description">
+        <textarea
+          value={form.description}
+          onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))}
+          className={`${inputClassName} min-h-28 resize-y`}
+        />
+      </Field>
+
+      <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Form Level">
-          <input value={form.form_level} onChange={(e) => setForm({ ...form, form_level: e.target.value })}
-            placeholder="Form 1 / Form 2 …" className={inputCls} />
+          <select
+            value={form.form_level}
+            onChange={(event) => setForm((current) => ({ ...current, form_level: event.target.value }))}
+            className={inputClassName}
+          >
+            <option value="">Not set</option>
+            {FORM_LEVEL_OPTIONS.map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
         </Field>
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Exam Path">
-          <input value={form.exam_path} onChange={(e) => setForm({ ...form, exam_path: e.target.value })}
-            placeholder="jce / msce / pslce" className={inputCls} />
-        </Field>
-        <Field label="Order Index">
-          <input type="number" value={form.order_index}
-            onChange={(e) => setForm({ ...form, order_index: Number(e.target.value) })}
-            className={inputCls} />
+        <Field label="Order">
+          <input
+            type="number"
+            value={form.order_index}
+            onChange={(event) =>
+              setForm((current) => ({ ...current, order_index: Number(event.target.value) || 0 }))
+            }
+            className={inputClassName}
+          />
         </Field>
       </div>
 
-      {error && <p className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+      {error ? <p className="rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p> : null}
 
-      <div className="flex items-center gap-3 pt-2">
-        <button type="submit" disabled={saving}
-          className="rounded-xl bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50">
-          {saving ? "Saving…" : "Save Topic"}
+      <div className="flex flex-wrap items-center gap-3 pt-2">
+        <button type="submit" disabled={saving} className={primaryButtonClassName}>
+          {saving ? "Saving..." : topic ? "Save Topic" : "Create Topic"}
         </button>
-        {!isNew && (
-          <button type="button" onClick={handleDelete} disabled={deleting}
-            className="rounded-xl border border-red-200 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50">
-            {deleting ? "Deleting…" : "Delete"}
+        {topic ? (
+          <button type="button" disabled={deleting} onClick={handleDelete} className={dangerButtonClassName}>
+            {deleting ? "Deleting..." : "Delete Topic"}
           </button>
-        )}
+        ) : null}
       </div>
     </form>
   );
 }
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label className="flex flex-col gap-1.5 text-sm font-medium text-zinc-700">
-      {label}
-      {children}
-    </label>
-  );
-}
-
-const inputCls =
-  "rounded-xl border border-zinc-200 px-3 py-2.5 text-sm text-zinc-900 outline-none transition focus:border-zinc-400 w-full";

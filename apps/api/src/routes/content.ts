@@ -2,16 +2,25 @@ import { FastifyInstance } from "fastify";
 import { supabaseAdmin } from "../lib/supabaseAdmin.js";
 import { requireSuperAdmin, requireAnyAdmin } from "../lib/adminAuth.js";
 import {
+  buildLegacyLessonBlocks,
   getLesson,
+  getLessonBlock,
   getSubject,
   getTopic,
+  inferVideoProviderFromUrl,
   normalizeExamPath,
+  normalizeLessonBlockType,
+  normalizeLessonContentType,
   normalizeOptionalText,
   normalizeOrderIndex,
   normalizeRequiredText,
+  normalizeVideoProvider,
+  sortLessonBlocks,
+  type LessonBlockRow,
   type LessonRow,
   type SubjectRow,
   type TopicRow,
+  type LessonWithBlocksRow,
 } from "../lib/adminContent.js";
 
 type ContentTreeTopicRow = {
@@ -27,6 +36,91 @@ type ContentTreeTopicRow = {
 type ContentTreeSubjectRow = SubjectRow & {
   topics: ContentTreeTopicRow[];
 };
+
+const LESSON_SELECT =
+  "id, topic_id, title, content, video_url, content_type, tier_gate, is_free_preview, order_index, exam_path";
+const LESSON_BLOCK_SELECT =
+  "id, lesson_id, block_type, title, text_content, video_url, video_provider, order_index, created_at, updated_at";
+const LESSON_WITH_BLOCKS_SELECT = `${LESSON_SELECT}, lesson_blocks(${LESSON_BLOCK_SELECT})`;
+
+type LessonBlockDraft = {
+  block_type: "text" | "video";
+  title: string | null;
+  text_content: string | null;
+  video_url: string | null;
+  video_provider: "youtube" | "vimeo" | "direct" | "other" | null;
+};
+
+function mapLessonWithSortedBlocks(lesson: LessonWithBlocksRow): LessonWithBlocksRow {
+  return {
+    ...lesson,
+    lesson_blocks: sortLessonBlocks(lesson.lesson_blocks),
+  };
+}
+
+function buildLessonBlockDraft(input: {
+  block_type: string | null | undefined;
+  title?: string | null;
+  text_content?: string | null;
+  video_url?: string | null;
+  video_provider?: string | null;
+}): { data: LessonBlockDraft | null; error: string | null } {
+  const blockType = normalizeLessonBlockType(input.block_type);
+  if (!blockType) {
+    return { data: null, error: "Block type must be text or video" };
+  }
+
+  const title = normalizeOptionalText(input.title);
+  const textContent = normalizeOptionalText(input.text_content);
+  const videoUrl = normalizeOptionalText(input.video_url);
+  const requestedProvider = normalizeVideoProvider(input.video_provider);
+
+  if (blockType === "text") {
+    if (!textContent) {
+      return { data: null, error: "Text blocks require text_content" };
+    }
+
+    return {
+      data: {
+        block_type: blockType,
+        title,
+        text_content: textContent,
+        video_url: null,
+        video_provider: null,
+      },
+      error: null,
+    };
+  }
+
+  if (!videoUrl) {
+    return { data: null, error: "Video blocks require video_url" };
+  }
+
+  return {
+    data: {
+      block_type: blockType,
+      title,
+      text_content: null,
+      video_url: videoUrl,
+      video_provider: requestedProvider ?? inferVideoProviderFromUrl(videoUrl) ?? "other",
+    },
+    error: null,
+  };
+}
+
+function buildLegacyImportPayload(lesson: LessonRow): LessonBlockDraft[] {
+  return buildLegacyLessonBlocks(lesson).map((block) => ({
+    block_type: block.block_type,
+    title: block.title,
+    text_content: block.text_content,
+    video_url: block.video_url,
+    video_provider: block.video_provider,
+  }));
+}
+
+function getNextLessonBlockOrderIndex(blocks: LessonBlockRow[]): number {
+  return blocks.reduce((maxOrder, block) => Math.max(maxOrder, block.order_index), -1) + 1;
+}
 
 export async function contentRoutes(app: FastifyInstance) {
   // ── Content tree (sidebar) ─────────────────────────────────────
@@ -64,12 +158,12 @@ export async function contentRoutes(app: FastifyInstance) {
 
       const { data, error } = await supabaseAdmin
         .from("lessons")
-        .select("id, topic_id, title, content, video_url, content_type, tier_gate, is_free_preview, order_index, exam_path")
+        .select(LESSON_WITH_BLOCKS_SELECT)
         .eq("topic_id", request.params.topicId)
         .order("order_index");
 
       if (error) return reply.status(500).send({ error: error.message });
-      return (data as LessonRow[] | null) ?? [];
+      return ((data as LessonWithBlocksRow[] | null) ?? []).map(mapLessonWithSortedBlocks);
     }
   );
 
@@ -326,13 +420,13 @@ export async function contentRoutes(app: FastifyInstance) {
         title,
         content: normalizeOptionalText(request.body.content),
         video_url: normalizeOptionalText(request.body.video_url),
-        content_type: normalizeOptionalText(request.body.content_type) ?? "text",
+        content_type: normalizeLessonContentType(request.body.content_type) ?? "text",
         tier_gate: normalizeOptionalText(request.body.tier_gate) ?? "free",
         is_free_preview: request.body.is_free_preview ?? false,
         order_index: normalizeOrderIndex(request.body.order_index),
         exam_path: topicResult.data.exam_path,
       })
-      .select("id, topic_id, title, content, video_url, content_type, tier_gate, is_free_preview, order_index, exam_path")
+      .select(LESSON_SELECT)
       .single();
 
     if (error) return reply.status(400).send({ error: error.message });
@@ -374,7 +468,11 @@ export async function contentRoutes(app: FastifyInstance) {
     }
     if (request.body.content !== undefined) updates.content = normalizeOptionalText(request.body.content);
     if (request.body.video_url !== undefined) updates.video_url = normalizeOptionalText(request.body.video_url);
-    if (request.body.content_type !== undefined) updates.content_type = normalizeOptionalText(request.body.content_type);
+    if (request.body.content_type !== undefined) {
+      const contentType = normalizeLessonContentType(request.body.content_type);
+      if (!contentType) return reply.status(400).send({ error: "Lesson content_type must be text, video, or mixed" });
+      updates.content_type = contentType;
+    }
     if (request.body.tier_gate !== undefined) updates.tier_gate = normalizeOptionalText(request.body.tier_gate);
     if (request.body.is_free_preview !== undefined) updates.is_free_preview = request.body.is_free_preview;
     if (request.body.order_index !== undefined) updates.order_index = normalizeOrderIndex(request.body.order_index);
@@ -383,12 +481,257 @@ export async function contentRoutes(app: FastifyInstance) {
       .from("lessons")
       .update(updates)
       .eq("id", request.params.id)
-      .select("id, topic_id, title, content, video_url, content_type, tier_gate, is_free_preview, order_index, exam_path")
+      .select(LESSON_SELECT)
       .single();
 
     if (error) return reply.status(400).send({ error: error.message });
     return data as LessonRow;
   });
+
+  app.get<{ Params: { lessonId: string } }>(
+    "/admin/lessons/:lessonId/blocks",
+    async (request, reply) => {
+      const admin = await requireAnyAdmin(request, reply);
+      if (!admin) return;
+
+      const lessonResult = await getLesson(request.params.lessonId);
+      if (lessonResult.error) return reply.status(500).send({ error: lessonResult.error });
+      if (!lessonResult.data) return reply.status(404).send({ error: "Lesson not found" });
+
+      const { data, error } = await supabaseAdmin
+        .from("lesson_blocks")
+        .select(LESSON_BLOCK_SELECT)
+        .eq("lesson_id", request.params.lessonId);
+
+      if (error) return reply.status(500).send({ error: error.message });
+
+      const blocks = sortLessonBlocks((data as LessonBlockRow[] | null) ?? []);
+      const legacyBlocks = blocks.length === 0 ? buildLegacyLessonBlocks(lessonResult.data) : [];
+
+      return {
+        lesson_id: request.params.lessonId,
+        has_persisted_blocks: blocks.length > 0,
+        uses_legacy_fallback: blocks.length === 0 && legacyBlocks.length > 0,
+        blocks,
+        legacy_blocks: legacyBlocks,
+      };
+    }
+  );
+
+  app.post<{
+    Params: { lessonId: string };
+    Body: {
+      block_type: string;
+      title?: string;
+      text_content?: string;
+      video_url?: string;
+      video_provider?: string;
+    };
+  }>("/admin/lessons/:lessonId/blocks", async (request, reply) => {
+    const admin = await requireAnyAdmin(request, reply);
+    if (!admin) return;
+
+    const lessonResult = await getLesson(request.params.lessonId);
+    if (lessonResult.error) return reply.status(500).send({ error: lessonResult.error });
+    if (!lessonResult.data) return reply.status(404).send({ error: "Lesson not found" });
+
+    const { data: existingData, error: existingError } = await supabaseAdmin
+      .from("lesson_blocks")
+      .select(LESSON_BLOCK_SELECT)
+      .eq("lesson_id", request.params.lessonId);
+
+    if (existingError) return reply.status(500).send({ error: existingError.message });
+
+    const existingBlocks = sortLessonBlocks((existingData as LessonBlockRow[] | null) ?? []);
+    if (existingBlocks.length === 0 && buildLegacyLessonBlocks(lessonResult.data).length > 0) {
+      return reply.status(409).send({ error: "Import legacy content before adding structured blocks" });
+    }
+
+    const draftResult = buildLessonBlockDraft(request.body);
+    if (draftResult.error || !draftResult.data) {
+      return reply.status(400).send({ error: draftResult.error ?? "Invalid lesson block payload" });
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from("lesson_blocks")
+      .insert({
+        lesson_id: request.params.lessonId,
+        ...draftResult.data,
+        order_index: getNextLessonBlockOrderIndex(existingBlocks),
+      })
+      .select(LESSON_BLOCK_SELECT)
+      .single();
+
+    if (error) return reply.status(400).send({ error: error.message });
+    return reply.status(201).send(data as LessonBlockRow);
+  });
+
+  app.patch<{
+    Params: { id: string };
+    Body: {
+      block_type?: string;
+      title?: string;
+      text_content?: string;
+      video_url?: string;
+      video_provider?: string;
+    };
+  }>("/admin/lesson-blocks/:id", async (request, reply) => {
+    const admin = await requireAnyAdmin(request, reply);
+    if (!admin) return;
+
+    const blockResult = await getLessonBlock(request.params.id);
+    if (blockResult.error) return reply.status(500).send({ error: blockResult.error });
+    if (!blockResult.data) return reply.status(404).send({ error: "Lesson block not found" });
+
+    const draftResult = buildLessonBlockDraft({
+      block_type: request.body.block_type ?? blockResult.data.block_type,
+      title: request.body.title !== undefined ? request.body.title : blockResult.data.title,
+      text_content: request.body.text_content !== undefined ? request.body.text_content : blockResult.data.text_content,
+      video_url: request.body.video_url !== undefined ? request.body.video_url : blockResult.data.video_url,
+      video_provider:
+        request.body.video_provider !== undefined ? request.body.video_provider : blockResult.data.video_provider,
+    });
+
+    if (draftResult.error || !draftResult.data) {
+      return reply.status(400).send({ error: draftResult.error ?? "Invalid lesson block payload" });
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from("lesson_blocks")
+      .update(draftResult.data)
+      .eq("id", request.params.id)
+      .select(LESSON_BLOCK_SELECT)
+      .single();
+
+    if (error) return reply.status(400).send({ error: error.message });
+    return data as LessonBlockRow;
+  });
+
+  app.delete<{ Params: { id: string } }>(
+    "/admin/lesson-blocks/:id",
+    async (request, reply) => {
+      const admin = await requireAnyAdmin(request, reply);
+      if (!admin) return;
+
+      const blockResult = await getLessonBlock(request.params.id);
+      if (blockResult.error) return reply.status(500).send({ error: blockResult.error });
+      if (!blockResult.data) return reply.status(404).send({ error: "Lesson block not found" });
+
+      const { error } = await supabaseAdmin
+        .from("lesson_blocks")
+        .delete()
+        .eq("id", request.params.id);
+
+      if (error) return reply.status(400).send({ error: error.message });
+      return { ok: true };
+    }
+  );
+
+  app.post<{
+    Params: { lessonId: string };
+    Body: { block_ids: string[] };
+  }>("/admin/lessons/:lessonId/blocks/reorder", async (request, reply) => {
+    const admin = await requireAnyAdmin(request, reply);
+    if (!admin) return;
+
+    const lessonResult = await getLesson(request.params.lessonId);
+    if (lessonResult.error) return reply.status(500).send({ error: lessonResult.error });
+    if (!lessonResult.data) return reply.status(404).send({ error: "Lesson not found" });
+
+    const { data: blockData, error: blockError } = await supabaseAdmin
+      .from("lesson_blocks")
+      .select(LESSON_BLOCK_SELECT)
+      .eq("lesson_id", request.params.lessonId);
+
+    if (blockError) return reply.status(500).send({ error: blockError.message });
+
+    const blocks = sortLessonBlocks((blockData as LessonBlockRow[] | null) ?? []);
+    const requestedIds = Array.isArray(request.body.block_ids)
+      ? request.body.block_ids.filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+      : [];
+
+    if (requestedIds.length !== blocks.length) {
+      return reply.status(400).send({ error: "Reorder payload must include every block for the lesson" });
+    }
+
+    if (new Set(requestedIds).size !== requestedIds.length) {
+      return reply.status(400).send({ error: "Reorder payload contains duplicate block ids" });
+    }
+
+    const blockById = new Map(blocks.map((block) => [block.id, block]));
+    if (requestedIds.some((id) => !blockById.has(id))) {
+      return reply.status(400).send({ error: "Reorder payload contains blocks outside this lesson" });
+    }
+
+    const timestamp = new Date().toISOString();
+    const reorderPayload = requestedIds.map((id, index) => {
+      const block = blockById.get(id)!;
+      return {
+        id: block.id,
+        lesson_id: block.lesson_id,
+        block_type: block.block_type,
+        title: block.title,
+        text_content: block.text_content,
+        video_url: block.video_url,
+        video_provider: block.video_provider,
+        order_index: index,
+        created_at: block.created_at,
+        updated_at: timestamp,
+      };
+    });
+
+    const { error } = await supabaseAdmin.from("lesson_blocks").upsert(reorderPayload);
+    if (error) return reply.status(400).send({ error: error.message });
+
+    const { data: reorderedData, error: reorderedError } = await supabaseAdmin
+      .from("lesson_blocks")
+      .select(LESSON_BLOCK_SELECT)
+      .eq("lesson_id", request.params.lessonId);
+
+    if (reorderedError) return reply.status(500).send({ error: reorderedError.message });
+    return sortLessonBlocks((reorderedData as LessonBlockRow[] | null) ?? []);
+  });
+
+  app.post<{ Params: { lessonId: string } }>(
+    "/admin/lessons/:lessonId/blocks/import-legacy",
+    async (request, reply) => {
+      const admin = await requireAnyAdmin(request, reply);
+      if (!admin) return;
+
+      const lessonResult = await getLesson(request.params.lessonId);
+      if (lessonResult.error) return reply.status(500).send({ error: lessonResult.error });
+      if (!lessonResult.data) return reply.status(404).send({ error: "Lesson not found" });
+
+      const { data: existingData, error: existingError } = await supabaseAdmin
+        .from("lesson_blocks")
+        .select(LESSON_BLOCK_SELECT)
+        .eq("lesson_id", request.params.lessonId);
+
+      if (existingError) return reply.status(500).send({ error: existingError.message });
+      if (((existingData as LessonBlockRow[] | null) ?? []).length > 0) {
+        return reply.status(409).send({ error: "Lesson already uses structured blocks" });
+      }
+
+      const draftBlocks = buildLegacyImportPayload(lessonResult.data);
+      if (draftBlocks.length === 0) {
+        return reply.status(400).send({ error: "Lesson has no legacy content to import" });
+      }
+
+      const { data, error } = await supabaseAdmin
+        .from("lesson_blocks")
+        .insert(
+          draftBlocks.map((block, index) => ({
+            lesson_id: request.params.lessonId,
+            ...block,
+            order_index: index,
+          }))
+        )
+        .select(LESSON_BLOCK_SELECT);
+
+      if (error) return reply.status(400).send({ error: error.message });
+      return reply.status(201).send(sortLessonBlocks((data as LessonBlockRow[] | null) ?? []));
+    }
+  );
 
   app.delete<{ Params: { id: string } }>(
     "/admin/lessons/:id",

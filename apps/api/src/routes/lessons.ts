@@ -1,5 +1,9 @@
 import { FastifyInstance } from "fastify";
 import { supabase } from "../lib/supabase.js";
+import {
+  resolveLessonBlocks,
+  type LessonWithBlocksRow,
+} from "../lib/adminContent.js";
 
 export async function lessonRoutes(app: FastifyInstance) {
   app.get<{ Params: { topicId: string } }>(
@@ -28,15 +32,23 @@ export async function lessonRoutes(app: FastifyInstance) {
 
       const { data, error } = await supabase
         .from("lessons")
-        .select("id, title, content, video_url, content_type, order_index, topic_id")
+        .select(
+          "id, topic_id, title, content, video_url, content_type, tier_gate, is_free_preview, order_index, exam_path, lesson_blocks(id, lesson_id, block_type, title, text_content, video_url, video_provider, order_index, created_at, updated_at)"
+        )
         .eq("id", lessonId)
-        .single();
+        .maybeSingle();
 
-      if (error) {
+      if (error || !data) {
         return reply.status(404).send({ error: "Lesson not found" });
       }
 
-      return data;
+      const lesson = data as LessonWithBlocksRow;
+      const { lesson_blocks, ...lessonMetadata } = lesson;
+
+      return {
+        ...lessonMetadata,
+        blocks: resolveLessonBlocks({ ...lessonMetadata, lesson_blocks }),
+      };
     }
   );
 }

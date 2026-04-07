@@ -1,7 +1,7 @@
 import { ActivityIndicator, Text, TouchableOpacity, View } from "react-native";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
-import { Subject, Topic, Lesson, ExamPaper } from "./src/lib/api";
+import { Subject, Topic, ExamPaper } from "./src/lib/api";
 import { AuthProvider, useAuth } from "./src/lib/AuthContext";
 import SubjectsScreen from "./src/screens/SubjectsScreen";
 import TopicsScreen from "./src/screens/TopicsScreen";
@@ -18,7 +18,7 @@ export type RootStackParamList = {
   Subjects: undefined;
   Topics: { subject: Subject };
   Lessons: { topic: Topic };
-  LessonDetail: { lesson: Lesson };
+  LessonDetail: { lessonId: string; lessonTitle: string };
   Quiz: { topic: Topic };
   Papers: { subject: Subject };
   PaperDrill: { paper: ExamPaper; subject: Subject };
@@ -92,7 +92,7 @@ function AppNavigator() {
           <Stack.Screen
             name="LessonDetail"
             component={LessonDetailScreen}
-            options={({ route }) => ({ title: route.params.lesson.title })}
+            options={({ route }) => ({ title: route.params.lessonTitle })}
           />
           <Stack.Screen
             name="Quiz"

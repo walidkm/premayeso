@@ -9,12 +9,10 @@ import {
   inputClassName,
   primaryButtonClassName,
 } from "@/components/AdminForm";
+import { LessonBlocksEditor } from "@/components/LessonBlocksEditor";
 
 type LessonFormState = {
   title: string;
-  content: string;
-  video_url: string;
-  content_type: "text" | "video" | "mixed";
   tier_gate: "free" | "premium";
   is_free_preview: boolean;
   order_index: number;
@@ -27,24 +25,16 @@ type Props = {
   subjectName: string;
   examPath: string;
   lesson: LessonAdminDto | null;
-  onSaved: () => void;
+  onSaved: (lesson: LessonAdminDto) => void;
   onDeleted: () => void;
 };
 
 const EMPTY_FORM: LessonFormState = {
   title: "",
-  content: "",
-  video_url: "",
-  content_type: "text",
   tier_gate: "free",
   is_free_preview: false,
   order_index: 0,
 };
-
-function extractYoutubeId(url: string): string | null {
-  const match = url.match(/(?:youtube\.com\/(?:watch\?v=|embed\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
-  return match?.[1] ?? null;
-}
 
 export function LessonEditor({
   token,
@@ -70,9 +60,6 @@ export function LessonEditor({
 
     setForm({
       title: lesson.title ?? "",
-      content: lesson.content ?? "",
-      video_url: lesson.video_url ?? "",
-      content_type: lesson.content_type ?? "text",
       tier_gate: lesson.tier_gate ?? "free",
       is_free_preview: lesson.is_free_preview ?? false,
       order_index: lesson.order_index ?? 0,
@@ -86,7 +73,7 @@ export function LessonEditor({
     setError(null);
 
     try {
-      await requestJson(lesson ? `/admin/lessons/${lesson.id}` : "/admin/lessons", {
+      const savedLesson = await requestJson<LessonAdminDto>(lesson ? `/admin/lessons/${lesson.id}` : "/admin/lessons", {
         method: lesson ? "PATCH" : "POST",
         headers: {
           "Content-Type": "application/json",
@@ -97,7 +84,7 @@ export function LessonEditor({
           topic_id: topicId,
         }),
       });
-      onSaved();
+      onSaved(savedLesson);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Save failed");
     } finally {
@@ -106,12 +93,13 @@ export function LessonEditor({
   }
 
   async function handleDelete() {
-    if (!lesson || !window.confirm("Delete this lesson? This cannot be undone.")) {
+    if (!lesson || !window.confirm("Delete this lesson and all of its blocks? This cannot be undone.")) {
       return;
     }
 
     setDeleting(true);
     setError(null);
+
     try {
       await requestJson(`/admin/lessons/${lesson.id}`, {
         method: "DELETE",
@@ -125,134 +113,94 @@ export function LessonEditor({
     }
   }
 
-  const youtubeId = form.video_url ? extractYoutubeId(form.video_url) : null;
-  const showTextEditor = form.content_type === "text" || form.content_type === "mixed";
-  const showVideo = form.content_type === "video" || form.content_type === "mixed";
-
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-      <div>
-        <h3 className="text-lg font-semibold tracking-tight text-zinc-950">
-          {lesson ? "Edit Lesson" : "Create Lesson"}
-        </h3>
-        <p className="mt-1 text-sm text-zinc-500">
-          {subjectName} / {topicName} / {examPath}
-        </p>
-      </div>
+    <div className="flex flex-col gap-6">
+      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        <div>
+          <h3 className="text-lg font-semibold tracking-tight text-zinc-950">
+            {lesson ? "Edit Lesson" : "Create Lesson"}
+          </h3>
+          <p className="mt-1 text-sm text-zinc-500">
+            {subjectName} / {topicName} / {examPath}
+          </p>
+        </div>
 
-      <Field label="Title">
-        <input
-          required
-          value={form.title}
-          onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
-          className={inputClassName}
-        />
-      </Field>
-
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Content Type">
-          <select
-            value={form.content_type}
-            onChange={(event) =>
-              setForm((current) => ({
-                ...current,
-                content_type: event.target.value as LessonFormState["content_type"],
-              }))
-            }
-            className={inputClassName}
-          >
-            <option value="text">Text</option>
-            <option value="video">Video</option>
-            <option value="mixed">Mixed</option>
-          </select>
-        </Field>
-        <Field label="Order">
+        <Field label="Lesson Title">
           <input
-            type="number"
-            value={form.order_index}
-            onChange={(event) =>
-              setForm((current) => ({ ...current, order_index: Number(event.target.value) || 0 }))
-            }
+            required
+            value={form.title}
+            onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
             className={inputClassName}
           />
         </Field>
-      </div>
 
-      {showTextEditor ? (
-        <Field label="Lesson Content">
-          <textarea
-            value={form.content}
-            onChange={(event) => setForm((current) => ({ ...current, content: event.target.value }))}
-            className={`${inputClassName} min-h-64 resize-y font-mono text-xs`}
-          />
-        </Field>
-      ) : null}
-
-      {showVideo ? (
-        <div className="flex flex-col gap-3">
-          <Field label="Video URL">
+        <div className="grid gap-4 sm:grid-cols-3">
+          <Field label="Order">
             <input
-              value={form.video_url}
-              onChange={(event) => setForm((current) => ({ ...current, video_url: event.target.value }))}
+              type="number"
+              value={form.order_index}
+              onChange={(event) =>
+                setForm((current) => ({ ...current, order_index: Number(event.target.value) || 0 }))
+              }
               className={inputClassName}
-              placeholder="https://www.youtube.com/watch?v=..."
             />
           </Field>
-          {youtubeId ? (
-            <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-black aspect-video">
-              <iframe
-                src={`https://www.youtube.com/embed/${youtubeId}`}
-                className="h-full w-full"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                allowFullScreen
-              />
-            </div>
+
+          <Field label="Tier Gate">
+            <select
+              value={form.tier_gate}
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...current,
+                  tier_gate: event.target.value as LessonFormState["tier_gate"],
+                }))
+              }
+              className={inputClassName}
+            >
+              <option value="free">Free</option>
+              <option value="premium">Premium</option>
+            </select>
+          </Field>
+
+          <Field label="Free Preview">
+            <select
+              value={form.is_free_preview ? "true" : "false"}
+              onChange={(event) =>
+                setForm((current) => ({ ...current, is_free_preview: event.target.value === "true" }))
+              }
+              className={inputClassName}
+            >
+              <option value="false">No</option>
+              <option value="true">Yes</option>
+            </select>
+          </Field>
+        </div>
+
+        {error ? <p className="rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p> : null}
+
+        <div className="flex flex-wrap items-center gap-3 pt-2">
+          <button type="submit" disabled={saving} className={primaryButtonClassName}>
+            {saving ? "Saving..." : lesson ? "Save Lesson" : "Create Lesson"}
+          </button>
+          {lesson ? (
+            <button type="button" disabled={deleting} onClick={handleDelete} className={dangerButtonClassName}>
+              {deleting ? "Deleting..." : "Delete Lesson"}
+            </button>
           ) : null}
         </div>
-      ) : null}
+      </form>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Tier Gate">
-          <select
-            value={form.tier_gate}
-            onChange={(event) =>
-              setForm((current) => ({
-                ...current,
-                tier_gate: event.target.value as LessonFormState["tier_gate"],
-              }))
-            }
-            className={inputClassName}
-          >
-            <option value="free">Free</option>
-            <option value="premium">Premium</option>
-          </select>
-        </Field>
-        <Field label="Free Preview">
-          <select
-            value={form.is_free_preview ? "true" : "false"}
-            onChange={(event) =>
-              setForm((current) => ({ ...current, is_free_preview: event.target.value === "true" }))
-            }
-            className={inputClassName}
-          >
-            <option value="false">No</option>
-            <option value="true">Yes</option>
-          </select>
-        </Field>
-      </div>
-
-      {error ? <p className="rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p> : null}
-
-      <div className="flex flex-wrap items-center gap-3 pt-2">
-        <button type="submit" disabled={saving} className={primaryButtonClassName}>
-          {saving ? "Saving..." : lesson ? "Save Lesson" : "Create Lesson"}
-        </button>
-        {lesson ? (
-          <button type="button" disabled={deleting} onClick={handleDelete} className={dangerButtonClassName}>
-            {deleting ? "Deleting..." : "Delete Lesson"}
-          </button>
-        ) : null}
-      </div>
-    </form>
+      {lesson ? (
+        <LessonBlocksEditor key={lesson.id} token={token} lesson={lesson} onChanged={() => onSaved(lesson)} />
+      ) : (
+        <div className="rounded-3xl border border-dashed border-zinc-300 bg-zinc-50 px-5 py-6">
+          <p className="text-sm font-semibold text-zinc-900">Create the lesson container first</p>
+          <p className="mt-2 text-sm leading-6 text-zinc-500">
+            Once the lesson is created, you can add multiple ordered text and video blocks, import any legacy content,
+            and manage the final learner-facing structure.
+          </p>
+        </div>
+      )}
+    </div>
   );
 }

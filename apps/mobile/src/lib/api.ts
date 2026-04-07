@@ -81,6 +81,33 @@ export type Lesson = {
   order_index: number;
 };
 
+export type LessonBlock = {
+  id: string;
+  lesson_id: string;
+  block_type: "text" | "video";
+  title: string | null;
+  text_content: string | null;
+  video_url: string | null;
+  video_provider: "youtube" | "vimeo" | "direct" | "other" | null;
+  order_index: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type LessonDetail = {
+  id: string;
+  topic_id: string;
+  title: string;
+  content: string | null;
+  video_url: string | null;
+  content_type: "text" | "video" | "mixed";
+  tier_gate: "free" | "premium" | null;
+  is_free_preview: boolean | null;
+  order_index: number;
+  exam_path: ExamPath | null;
+  blocks: LessonBlock[];
+};
+
 export async function getTopics(subjectId: string): Promise<Topic[]> {
   const res = await fetch(`${API_URL}/subjects/${subjectId}/topics`);
   if (!res.ok) throw new Error("Failed to fetch topics");
@@ -120,6 +147,12 @@ export type CheckResult = {
 export async function getLessons(topicId: string): Promise<Lesson[]> {
   const res = await fetch(`${API_URL}/topics/${topicId}/lessons`);
   if (!res.ok) throw new Error("Failed to fetch lessons");
+  return res.json();
+}
+
+export async function getLessonDetail(lessonId: string): Promise<LessonDetail> {
+  const res = await fetch(`${API_URL}/lessons/${lessonId}`);
+  if (!res.ok) throw new Error("Failed to fetch lesson detail");
   return res.json();
 }
 

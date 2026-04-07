@@ -4,11 +4,17 @@ export const ALL_EXAM_PATHS = ["JCE", "MSCE", "PSLCE"] as const;
 export const PAPER_SOURCE_TYPES = ["maneb", "school", "teacher"] as const;
 export const PAPER_TYPES = ["maneb_past_paper", "school_exam", "question_pool"] as const;
 export const PAPER_EXAM_MODES = ["paper_layout", "randomized", "both"] as const;
+export const LESSON_CONTENT_TYPES = ["text", "video", "mixed"] as const;
+export const LESSON_BLOCK_TYPES = ["text", "video"] as const;
+export const VIDEO_PROVIDERS = ["youtube", "vimeo", "direct", "other"] as const;
 
 export type ExamPath = (typeof ALL_EXAM_PATHS)[number];
 export type PaperSourceType = (typeof PAPER_SOURCE_TYPES)[number];
 export type PaperType = (typeof PAPER_TYPES)[number];
 export type PaperExamMode = (typeof PAPER_EXAM_MODES)[number];
+export type LessonContentType = (typeof LESSON_CONTENT_TYPES)[number];
+export type LessonBlockType = (typeof LESSON_BLOCK_TYPES)[number];
+export type VideoProvider = (typeof VIDEO_PROVIDERS)[number];
 
 export type SubjectRow = {
   id: string;
@@ -36,11 +42,28 @@ export type LessonRow = {
   title: string;
   content: string | null;
   video_url: string | null;
-  content_type: "text" | "video" | "mixed" | null;
+  content_type: LessonContentType | null;
   tier_gate: "free" | "premium" | null;
   is_free_preview: boolean | null;
   order_index: number;
   exam_path: ExamPath | null;
+};
+
+export type LessonBlockRow = {
+  id: string;
+  lesson_id: string;
+  block_type: LessonBlockType;
+  title: string | null;
+  text_content: string | null;
+  video_url: string | null;
+  video_provider: VideoProvider | null;
+  order_index: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type LessonWithBlocksRow = LessonRow & {
+  lesson_blocks?: LessonBlockRow[] | null;
 };
 
 export type ExamPaperRow = {
@@ -110,6 +133,112 @@ export function normalizeExamMode(value: string | null | undefined): PaperExamMo
   return PAPER_EXAM_MODES.find((candidate) => candidate === value) ?? null;
 }
 
+export function normalizeLessonContentType(value: string | null | undefined): LessonContentType | null {
+  return LESSON_CONTENT_TYPES.find((candidate) => candidate === value) ?? null;
+}
+
+export function normalizeLessonBlockType(value: string | null | undefined): LessonBlockType | null {
+  return LESSON_BLOCK_TYPES.find((candidate) => candidate === value) ?? null;
+}
+
+export function normalizeVideoProvider(value: string | null | undefined): VideoProvider | null {
+  return VIDEO_PROVIDERS.find((candidate) => candidate === value) ?? null;
+}
+
+export function inferVideoProviderFromUrl(value: string | null | undefined): VideoProvider | null {
+  const url = normalizeOptionalText(value);
+  if (!url) return null;
+
+  const lower = url.toLowerCase();
+  if (lower.includes("youtube.com") || lower.includes("youtu.be")) {
+    return "youtube";
+  }
+
+  if (lower.includes("vimeo.com")) {
+    return "vimeo";
+  }
+
+  const directExtensions = [".mp4", ".m4v", ".mov", ".webm", ".m3u8", ".ogg", ".ogv"];
+
+  try {
+    const parsed = new URL(url);
+    const pathname = parsed.pathname.toLowerCase();
+    if (directExtensions.some((extension) => pathname.endsWith(extension))) {
+      return "direct";
+    }
+  } catch {
+    if (directExtensions.some((extension) => lower.includes(extension))) {
+      return "direct";
+    }
+  }
+
+  return "other";
+}
+
+export function sortLessonBlocks(blocks: LessonBlockRow[] | null | undefined): LessonBlockRow[] {
+  return [...(blocks ?? [])].sort((left, right) => {
+    if (left.order_index !== right.order_index) {
+      return left.order_index - right.order_index;
+    }
+
+    if (left.created_at !== right.created_at) {
+      return left.created_at.localeCompare(right.created_at);
+    }
+
+    return left.id.localeCompare(right.id);
+  });
+}
+
+const LEGACY_BLOCK_TIMESTAMP = "1970-01-01T00:00:00.000Z";
+
+export function buildLegacyLessonBlocks(
+  lesson: Pick<LessonRow, "id" | "content" | "video_url" | "content_type">
+): LessonBlockRow[] {
+  const blocks: LessonBlockRow[] = [];
+  const contentType = normalizeLessonContentType(lesson.content_type) ?? "text";
+
+  if ((contentType === "text" || contentType === "mixed") && lesson.content) {
+    blocks.push({
+      id: `legacy-text-${lesson.id}`,
+      lesson_id: lesson.id,
+      block_type: "text",
+      title: null,
+      text_content: lesson.content,
+      video_url: null,
+      video_provider: null,
+      order_index: blocks.length,
+      created_at: LEGACY_BLOCK_TIMESTAMP,
+      updated_at: LEGACY_BLOCK_TIMESTAMP,
+    });
+  }
+
+  if ((contentType === "video" || contentType === "mixed") && lesson.video_url) {
+    blocks.push({
+      id: `legacy-video-${lesson.id}`,
+      lesson_id: lesson.id,
+      block_type: "video",
+      title: null,
+      text_content: null,
+      video_url: lesson.video_url,
+      video_provider: inferVideoProviderFromUrl(lesson.video_url) ?? "other",
+      order_index: blocks.length,
+      created_at: LEGACY_BLOCK_TIMESTAMP,
+      updated_at: LEGACY_BLOCK_TIMESTAMP,
+    });
+  }
+
+  return blocks;
+}
+
+export function resolveLessonBlocks(
+  lesson: Pick<LessonRow, "id" | "content" | "video_url" | "content_type"> & {
+    lesson_blocks?: LessonBlockRow[] | null;
+  }
+): LessonBlockRow[] {
+  const persistedBlocks = sortLessonBlocks(lesson.lesson_blocks);
+  return persistedBlocks.length > 0 ? persistedBlocks : buildLegacyLessonBlocks(lesson);
+}
+
 export async function getSubject(subjectId: string): Promise<{ data: SubjectRow | null; error: string | null }> {
   const { data, error } = await supabaseAdmin
     .from("subjects")
@@ -138,6 +267,16 @@ export async function getLesson(lessonId: string): Promise<{ data: LessonRow | n
     .maybeSingle();
 
   return { data: (data as LessonRow | null) ?? null, error: error?.message ?? null };
+}
+
+export async function getLessonBlock(blockId: string): Promise<{ data: LessonBlockRow | null; error: string | null }> {
+  const { data, error } = await supabaseAdmin
+    .from("lesson_blocks")
+    .select("id, lesson_id, block_type, title, text_content, video_url, video_provider, order_index, created_at, updated_at")
+    .eq("id", blockId)
+    .maybeSingle();
+
+  return { data: (data as LessonBlockRow | null) ?? null, error: error?.message ?? null };
 }
 
 export async function getExamPaper(paperId: string): Promise<{ data: ExamPaperRow | null; error: string | null }> {

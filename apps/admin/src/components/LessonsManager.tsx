@@ -3,7 +3,12 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { canEditLessons } from "@/lib/admin";
-import type { ContentTreeSubjectDto, LessonAdminDto } from "@/lib/content";
+import {
+  getLessonContentMode,
+  getPersistedLessonBlocks,
+  type ContentTreeSubjectDto,
+  type LessonAdminDto,
+} from "@/lib/content";
 import { secondaryButtonClassName } from "@/components/AdminForm";
 import { EmptyState, SurfaceCard } from "@/components/AdminUi";
 import { LessonEditor } from "@/components/LessonEditor";
@@ -26,8 +31,9 @@ export function LessonsManager({ token, role, subjects, lessons }: Props) {
   const selectedSubject = subjects.find((subject) => subject.id === selectedSubjectId) ?? subjects[0] ?? null;
   const selectedTopic = selectedSubject?.topics.find((topic) => topic.id === selectedTopicId) ?? selectedSubject?.topics[0] ?? null;
   const topicLessons = selectedTopic ? lessons.filter((lesson) => lesson.topic_id === selectedTopic.id) : [];
-  const selectedLesson =
-    !isCreating && selectedLessonId ? topicLessons.find((lesson) => lesson.id === selectedLessonId) ?? topicLessons[0] ?? null : null;
+  const selectedLesson = !isCreating
+    ? topicLessons.find((lesson) => lesson.id === selectedLessonId) ?? topicLessons[0] ?? null
+    : null;
 
   function handleRefresh() {
     startTransition(() => {
@@ -35,7 +41,8 @@ export function LessonsManager({ token, role, subjects, lessons }: Props) {
     });
   }
 
-  function handleSaved() {
+  function handleSaved(savedLesson: LessonAdminDto) {
+    setSelectedLessonId(savedLesson.id);
     setIsCreating(false);
     handleRefresh();
   }
@@ -117,7 +124,15 @@ export function LessonsManager({ token, role, subjects, lessons }: Props) {
                       .slice()
                       .sort((left, right) => left.order_index - right.order_index)
                       .map((lesson) => {
-                        const isActive = !isCreating && lesson.id === selectedLessonId;
+                        const blockCount = getPersistedLessonBlocks(lesson).length;
+                        const contentMode = getLessonContentMode(lesson);
+                        const contentLabel =
+                          contentMode === "structured"
+                            ? `${blockCount} block${blockCount === 1 ? "" : "s"}`
+                            : contentMode === "legacy"
+                            ? `legacy ${lesson.content_type ?? "text"}`
+                            : "empty";
+                        const isActive = !isCreating && lesson.id === selectedLesson?.id;
                         return (
                           <button
                             key={lesson.id}
@@ -134,7 +149,7 @@ export function LessonsManager({ token, role, subjects, lessons }: Props) {
                           >
                             <p className="text-sm font-semibold">{lesson.title}</p>
                             <p className={`mt-1 text-xs ${isActive ? "text-zinc-300" : "text-zinc-500"}`}>
-                              {lesson.content_type ?? "text"} / {lesson.tier_gate ?? "free"}
+                              {contentLabel} / {lesson.tier_gate ?? "free"}
                             </p>
                           </button>
                         );

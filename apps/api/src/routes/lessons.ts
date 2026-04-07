@@ -1,7 +1,9 @@
 import { FastifyInstance } from "fastify";
 import { supabase } from "../lib/supabase.js";
+import { supabaseAdmin } from "../lib/supabaseAdmin.js";
 import {
   resolveLessonBlocks,
+  type LessonBlockRow,
   type LessonWithBlocksRow,
 } from "../lib/adminContent.js";
 
@@ -13,6 +15,24 @@ function hasLessonsSchemaCacheError(message: string | null | undefined): boolean
     message.includes("'video_url' column of 'lessons'") ||
     message.includes("'lesson_blocks'") ||
     message.includes("schema cache")
+  );
+}
+
+async function attachSignedUrls(
+  blocks: LessonBlockRow[]
+): Promise<(LessonBlockRow & { download_url: string | null })[]> {
+  return Promise.all(
+    blocks.map(async (block) => {
+      if (block.block_type !== "pdf" || !block.file_path) {
+        return { ...block, download_url: null };
+      }
+
+      const { data } = await supabaseAdmin.storage
+        .from("lesson-files")
+        .createSignedUrl(block.file_path, 3600);
+
+      return { ...block, download_url: data?.signedUrl ?? null };
+    })
   );
 }
 
@@ -44,7 +64,7 @@ export async function lessonRoutes(app: FastifyInstance) {
       const { data, error } = await supabase
         .from("lessons")
         .select(
-          "*, lesson_blocks(id, lesson_id, block_type, title, text_content, video_url, video_provider, order_index, created_at, updated_at)"
+          "*, lesson_blocks(id, lesson_id, block_type, title, text_content, video_url, video_provider, file_path, file_name, file_size, order_index, created_at, updated_at)"
         )
         .eq("id", lessonId)
         .maybeSingle();
@@ -66,7 +86,7 @@ export async function lessonRoutes(app: FastifyInstance) {
 
         return {
           ...fallbackData,
-          blocks: resolveLessonBlocks(fallbackData),
+          blocks: await attachSignedUrls(resolveLessonBlocks(fallbackData)),
         };
       }
 
@@ -79,7 +99,7 @@ export async function lessonRoutes(app: FastifyInstance) {
 
       return {
         ...lessonMetadata,
-        blocks: resolveLessonBlocks({ ...lessonMetadata, lesson_blocks }),
+        blocks: await attachSignedUrls(resolveLessonBlocks({ ...lessonMetadata, lesson_blocks })),
       };
     }
   );

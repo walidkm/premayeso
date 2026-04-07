@@ -13,7 +13,7 @@ export default async function LessonsPage({
 }) {
   const { supabase, examPath, role, email, token } = await getAdminPageContext(searchParams);
 
-  const [{ data: subjectData }, { data: lessonData }] = await Promise.all([
+  const [{ data: subjectData }, lessonQueryResult] = await Promise.all([
     supabase
       .from("subjects")
       .select("id, name, description, code, exam_path, order_index, topics(id, name, description, code, form_level, exam_path, order_index)")
@@ -28,11 +28,20 @@ export default async function LessonsPage({
       .order("order_index"),
   ]);
 
+  const { data: fallbackLessonData } =
+    lessonQueryResult.error
+      ? await supabase
+          .from("lessons")
+          .select("*")
+          .eq("exam_path", examPath)
+          .order("order_index")
+      : { data: null };
+
   const subjects = ((subjectData as ContentTreeSubjectDto[] | null) ?? []).map((subject) => ({
     ...subject,
     topics: (subject.topics ?? []).sort((left, right) => left.order_index - right.order_index),
   }));
-  const lessons = ((lessonData as LessonAdminDto[] | null) ?? []).map((lesson) => ({
+  const lessons = (((lessonQueryResult.data ?? fallbackLessonData) as LessonAdminDto[] | null) ?? []).map((lesson) => ({
     ...lesson,
     lesson_blocks: sortLessonBlocks(lesson.lesson_blocks),
   }));

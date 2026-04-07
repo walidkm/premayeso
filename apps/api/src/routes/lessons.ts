@@ -5,6 +5,17 @@ import {
   type LessonWithBlocksRow,
 } from "../lib/adminContent.js";
 
+function hasLessonsSchemaCacheError(message: string | null | undefined): boolean {
+  if (!message) return false;
+
+  return (
+    message.includes("'content_type' column of 'lessons'") ||
+    message.includes("'video_url' column of 'lessons'") ||
+    message.includes("'lesson_blocks'") ||
+    message.includes("schema cache")
+  );
+}
+
 export async function lessonRoutes(app: FastifyInstance) {
   app.get<{ Params: { topicId: string } }>(
     "/topics/:topicId/lessons",
@@ -13,7 +24,7 @@ export async function lessonRoutes(app: FastifyInstance) {
 
       const { data, error } = await supabase
         .from("lessons")
-        .select("id, title, content, video_url, content_type, order_index")
+        .select("*")
         .eq("topic_id", topicId)
         .order("order_index");
 
@@ -33,12 +44,33 @@ export async function lessonRoutes(app: FastifyInstance) {
       const { data, error } = await supabase
         .from("lessons")
         .select(
-          "id, topic_id, title, content, video_url, content_type, tier_gate, is_free_preview, order_index, exam_path, lesson_blocks(id, lesson_id, block_type, title, text_content, video_url, video_provider, order_index, created_at, updated_at)"
+          "*, lesson_blocks(id, lesson_id, block_type, title, text_content, video_url, video_provider, order_index, created_at, updated_at)"
         )
         .eq("id", lessonId)
         .maybeSingle();
 
-      if (error || !data) {
+      if (error) {
+        if (!hasLessonsSchemaCacheError(error.message)) {
+          return reply.status(404).send({ error: "Lesson not found" });
+        }
+
+        const { data: fallbackData, error: fallbackError } = await supabase
+          .from("lessons")
+          .select("*")
+          .eq("id", lessonId)
+          .maybeSingle();
+
+        if (fallbackError || !fallbackData) {
+          return reply.status(404).send({ error: "Lesson not found" });
+        }
+
+        return {
+          ...fallbackData,
+          blocks: resolveLessonBlocks(fallbackData),
+        };
+      }
+
+      if (!data) {
         return reply.status(404).send({ error: "Lesson not found" });
       }
 

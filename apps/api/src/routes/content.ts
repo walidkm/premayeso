@@ -37,8 +37,7 @@ type ContentTreeSubjectRow = SubjectRow & {
   topics: ContentTreeTopicRow[];
 };
 
-const LESSON_SELECT =
-  "id, topic_id, title, content, video_url, content_type, tier_gate, is_free_preview, order_index, exam_path";
+const LESSON_SELECT = "*";
 const LESSON_BLOCK_SELECT =
   "id, lesson_id, block_type, title, text_content, video_url, video_provider, order_index, created_at, updated_at";
 const LESSON_WITH_BLOCKS_SELECT = `${LESSON_SELECT}, lesson_blocks(${LESSON_BLOCK_SELECT})`;
@@ -122,6 +121,17 @@ function getNextLessonBlockOrderIndex(blocks: LessonBlockRow[]): number {
   return blocks.reduce((maxOrder, block) => Math.max(maxOrder, block.order_index), -1) + 1;
 }
 
+function hasLessonsSchemaCacheError(message: string | null | undefined): boolean {
+  if (!message) return false;
+
+  return (
+    message.includes("'content_type' column of 'lessons'") ||
+    message.includes("'video_url' column of 'lessons'") ||
+    message.includes("'lesson_blocks'") ||
+    message.includes("schema cache")
+  );
+}
+
 export async function contentRoutes(app: FastifyInstance) {
   // ── Content tree (sidebar) ─────────────────────────────────────
   app.get<{ Querystring: { exam_path?: string } }>("/admin/content/tree", async (request, reply) => {
@@ -162,8 +172,22 @@ export async function contentRoutes(app: FastifyInstance) {
         .eq("topic_id", request.params.topicId)
         .order("order_index");
 
-      if (error) return reply.status(500).send({ error: error.message });
-      return ((data as LessonWithBlocksRow[] | null) ?? []).map(mapLessonWithSortedBlocks);
+      if (!error) {
+        return ((data as LessonWithBlocksRow[] | null) ?? []).map(mapLessonWithSortedBlocks);
+      }
+
+      if (!hasLessonsSchemaCacheError(error.message)) {
+        return reply.status(500).send({ error: error.message });
+      }
+
+      const { data: fallbackData, error: fallbackError } = await supabaseAdmin
+        .from("lessons")
+        .select(LESSON_SELECT)
+        .eq("topic_id", request.params.topicId)
+        .order("order_index");
+
+      if (fallbackError) return reply.status(500).send({ error: fallbackError.message });
+      return ((fallbackData as LessonRow[] | null) ?? []).map((lesson) => ({ ...lesson, lesson_blocks: [] }));
     }
   );
 
@@ -413,19 +437,29 @@ export async function contentRoutes(app: FastifyInstance) {
     const title = normalizeRequiredText(request.body.title);
     if (!title) return reply.status(400).send({ error: "Lesson title is required" });
 
+    const contentType =
+      request.body.content_type !== undefined ? normalizeLessonContentType(request.body.content_type) : null;
+    if (request.body.content_type !== undefined && !contentType) {
+      return reply.status(400).send({ error: "Lesson content_type must be text, video, or mixed" });
+    }
+
+    const insertPayload: Record<string, string | number | boolean | null> = {
+      topic_id: request.body.topic_id,
+      title,
+      content: normalizeOptionalText(request.body.content),
+      tier_gate: normalizeOptionalText(request.body.tier_gate) ?? "free",
+      is_free_preview: request.body.is_free_preview ?? false,
+      order_index: normalizeOrderIndex(request.body.order_index),
+      exam_path: topicResult.data.exam_path,
+    };
+
+    const videoUrl = normalizeOptionalText(request.body.video_url);
+    if (videoUrl !== null) insertPayload.video_url = videoUrl;
+    if (contentType !== null) insertPayload.content_type = contentType;
+
     const { data, error } = await supabaseAdmin
       .from("lessons")
-      .insert({
-        topic_id: request.body.topic_id,
-        title,
-        content: normalizeOptionalText(request.body.content),
-        video_url: normalizeOptionalText(request.body.video_url),
-        content_type: normalizeLessonContentType(request.body.content_type) ?? "text",
-        tier_gate: normalizeOptionalText(request.body.tier_gate) ?? "free",
-        is_free_preview: request.body.is_free_preview ?? false,
-        order_index: normalizeOrderIndex(request.body.order_index),
-        exam_path: topicResult.data.exam_path,
-      })
+      .insert(insertPayload)
       .select(LESSON_SELECT)
       .single();
 

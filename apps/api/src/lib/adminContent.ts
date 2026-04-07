@@ -262,7 +262,7 @@ export async function getTopic(topicId: string): Promise<{ data: TopicRow | null
 export async function getLesson(lessonId: string): Promise<{ data: LessonRow | null; error: string | null }> {
   const { data, error } = await supabaseAdmin
     .from("lessons")
-    .select("id, topic_id, title, content, video_url, content_type, tier_gate, is_free_preview, order_index, exam_path")
+    .select("*")
     .eq("id", lessonId)
     .maybeSingle();
 

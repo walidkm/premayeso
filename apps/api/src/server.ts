@@ -18,7 +18,7 @@ const start = async () => {
 
     // Multipart needed for file uploads (admin question upload)
     await app.register(multipart, {
-      limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB
+      limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB
     });
 
     app.get("/health", async () => {

@@ -369,6 +369,10 @@ export function LessonBlocksEditor({ token, lesson, onChanged }: Props) {
                         {formatFileSize(block.file_size)}
                       </span>
                     ) : null}
+                    <Badge tone={block.block_type === "video" ? "accent" : "neutral"}>{block.block_type}</Badge>
+                    {block.block_type === "video" ? (
+                      <Badge tone="accent">{getVideoProviderLabel(block.video_provider)}</Badge>
+                    ) : null}
                     <span className={`text-xs ${form?.blockId === block.id ? "text-zinc-300" : "text-zinc-400"}`}>
                       Section {index + 1}
                     </span>
@@ -378,6 +382,10 @@ export function LessonBlocksEditor({ token, lesson, onChanged }: Props) {
                   </p>
                   <p className={`mt-2 text-sm ${form?.blockId === block.id ? "text-zinc-300" : "text-zinc-600"}`}>
                     {block.block_type === "text" ? summarizeText(block.text_content) : block.block_type === "pdf" ? (block.file_name ?? "PDF file") : summarizeUrl(block.video_url)}
+                    {block.title ?? (block.block_type === "text" ? "Untitled text section" : "Untitled video section")}
+                  </p>
+                  <p className={`mt-2 text-sm ${form?.blockId === block.id ? "text-zinc-300" : "text-zinc-600"}`}>
+                    {block.block_type === "text" ? summarizeText(block.text_content) : summarizeUrl(block.video_url)}
                   </p>
                 </div>
 
@@ -403,6 +411,9 @@ export function LessonBlocksEditor({ token, lesson, onChanged }: Props) {
                       Edit
                     </button>
                   ) : null}
+                  <button type="button" onClick={() => startEdit(block)} className={smallButtonClassName}>
+                    Edit
+                  </button>
                   <button
                     type="button"
                     onClick={() => handleDelete(block)}

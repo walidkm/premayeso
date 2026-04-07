@@ -44,6 +44,11 @@ const LESSON_WITH_BLOCKS_SELECT = `${LESSON_SELECT}, lesson_blocks(${LESSON_BLOC
 
 type LessonBlockDraft = {
   block_type: "text" | "video" | "pdf";
+  "id, lesson_id, block_type, title, text_content, video_url, video_provider, order_index, created_at, updated_at";
+const LESSON_WITH_BLOCKS_SELECT = `${LESSON_SELECT}, lesson_blocks(${LESSON_BLOCK_SELECT})`;
+
+type LessonBlockDraft = {
+  block_type: "text" | "video";
   title: string | null;
   text_content: string | null;
   video_url: string | null;
@@ -66,6 +71,7 @@ function buildLessonBlockDraft(input: {
 }): { data: LessonBlockDraft | null; error: string | null } {
   const blockType = normalizeLessonBlockType(input.block_type);
   if (!blockType || blockType === "pdf") {
+  if (!blockType) {
     return { data: null, error: "Block type must be text or video" };
   }
 

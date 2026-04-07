@@ -3,6 +3,7 @@ export const PAPER_SOURCE_OPTIONS = ["maneb", "school", "teacher"] as const;
 export const PAPER_TYPE_OPTIONS = ["maneb_past_paper", "school_exam", "question_pool"] as const;
 export const PAPER_EXAM_MODE_OPTIONS = ["paper_layout", "randomized", "both"] as const;
 export const LESSON_BLOCK_TYPE_OPTIONS = ["text", "video", "pdf"] as const;
+export const LESSON_BLOCK_TYPE_OPTIONS = ["text", "video"] as const;
 export const VIDEO_PROVIDER_OPTIONS = ["youtube", "vimeo", "direct", "other"] as const;
 
 export type LessonBlockType = (typeof LESSON_BLOCK_TYPE_OPTIONS)[number];

@@ -63,13 +63,6 @@ function getVideoMeta(url: string | null): string {
   }
 }
 
-function formatFileSize(bytes: number | null): string {
-  if (bytes === null || bytes === 0) return "";
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
 export default function LessonDetailScreen({ route }: Props) {
   const { lessonId, lessonTitle } = route.params;
   const [lesson, setLesson] = useState<LessonDetail | null>(null);
@@ -104,13 +97,13 @@ export default function LessonDetailScreen({ route }: Props) {
     };
   }, [lessonId]);
 
-  async function handleOpenUrl(url: string | null, label: string) {
+  async function handleOpenVideo(url: string | null) {
     if (!url) return;
 
     try {
       await Linking.openURL(url);
     } catch {
-      Alert.alert(`Unable to open ${label}`, `This ${label} link could not be opened on this device.`);
+      Alert.alert("Unable to open video", "This video link could not be opened on this device.");
     }
   }
 
@@ -146,31 +139,11 @@ export default function LessonDetailScreen({ route }: Props) {
               {block.title ? <Text style={styles.sectionTitle}>{block.title}</Text> : null}
               <View style={styles.textBlock}>{renderText(block.text_content ?? "")}</View>
             </View>
-          ) : block.block_type === "pdf" ? (
-            <TouchableOpacity
-              key={block.id}
-              activeOpacity={0.86}
-              onPress={() => handleOpenUrl(block.download_url, "PDF")}
-              style={styles.pdfCard}
-            >
-              <View style={styles.videoHeaderRow}>
-                <Text style={styles.pdfEyebrow}>PDF Notes</Text>
-                {block.file_size ? (
-                  <Text style={styles.pdfSize}>{formatFileSize(block.file_size)}</Text>
-                ) : null}
-              </View>
-              <Text style={styles.pdfTitle}>
-                {block.title ?? block.file_name ?? "Lesson notes"}
-              </Text>
-              <View style={styles.pdfFooter}>
-                <Text style={styles.pdfFooterText}>Tap to open PDF</Text>
-              </View>
-            </TouchableOpacity>
           ) : (
             <TouchableOpacity
               key={block.id}
               activeOpacity={0.86}
-              onPress={() => handleOpenUrl(block.video_url, "video")}
+              onPress={() => handleOpenVideo(block.video_url)}
               style={styles.videoCard}
             >
               <View style={styles.videoHeaderRow}>
@@ -296,38 +269,5 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "600",
     color: "#bfdbfe",
-  },
-  pdfCard: {
-    borderRadius: 18,
-    backgroundColor: "#7c2d12",
-    padding: 16,
-  },
-  pdfEyebrow: {
-    fontSize: 12,
-    fontWeight: "700",
-    letterSpacing: 0.6,
-    textTransform: "uppercase",
-    color: "#fdba74",
-  },
-  pdfSize: {
-    fontSize: 12,
-    color: "#fed7aa",
-  },
-  pdfTitle: {
-    marginTop: 10,
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#fff7ed",
-  },
-  pdfFooter: {
-    marginTop: 14,
-    borderTopWidth: 1,
-    borderTopColor: "#9a3412",
-    paddingTop: 12,
-  },
-  pdfFooterText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#fdba74",
   },
 });

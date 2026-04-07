@@ -50,7 +50,7 @@ export default function LessonsScreen({ route, navigation }: Props) {
       renderItem={({ item }) => (
         <TouchableOpacity
           style={styles.card}
-          onPress={() => navigation.navigate("LessonDetail", { lesson: item })}
+          onPress={() => navigation.navigate("LessonDetail", { lessonId: item.id, lessonTitle: item.title })}
         >
           <Text style={styles.cardTitle}>{item.title}</Text>
         </TouchableOpacity>

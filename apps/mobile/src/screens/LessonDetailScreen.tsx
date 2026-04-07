@@ -1,25 +1,32 @@
-import { ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { useEffect, useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  Linking,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { WebView } from "react-native-webview";
+import { getLessonDetail, type LessonBlock, type LessonDetail } from "../lib/api";
 import { RootStackParamList } from "../../App";
 
 type Props = NativeStackScreenProps<RootStackParamList, "LessonDetail">;
 
-function extractYoutubeId(url: string): string | null {
-  const m = url.match(/(?:youtube\.com\/(?:watch\?v=|embed\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
-  return m?.[1] ?? null;
-}
-
 function renderText(content: string) {
-  return content.split("\n").map((line, i) => {
-    if (line.trim() === "") return <View key={i} style={{ height: 12 }} />;
-    // Bold: **text**
+  return content.split("\n").map((line, index) => {
+    if (line.trim() === "") return <View key={index} style={{ height: 12 }} />;
+
     const parts = line.split(/(\*\*[^*]+\*\*)/g);
     return (
-      <Text key={i} style={styles.content}>
-        {parts.map((part, j) =>
+      <Text key={index} style={styles.content}>
+        {parts.map((part, partIndex) =>
           part.startsWith("**") && part.endsWith("**") ? (
-            <Text key={j} style={styles.bold}>{part.slice(2, -2)}</Text>
+            <Text key={partIndex} style={styles.bold}>
+              {part.slice(2, -2)}
+            </Text>
           ) : (
             part
           )
@@ -29,49 +36,238 @@ function renderText(content: string) {
   });
 }
 
-export default function LessonDetailScreen({ route }: Props) {
-  const { lesson } = route.params;
-  const { width } = useWindowDimensions();
-  const videoHeight = Math.round((width - 32) * 9 / 16);
+function getProviderLabel(block: LessonBlock): string {
+  switch (block.video_provider) {
+    case "youtube":
+      return "YouTube";
+    case "vimeo":
+      return "Vimeo";
+    case "direct":
+      return "Direct video";
+    case "other":
+      return "External video";
+    default:
+      return "Video";
+  }
+}
 
-  const ytId = lesson.video_url ? extractYoutubeId(lesson.video_url) : null;
-  const showText = lesson.content_type === "text" || lesson.content_type === "mixed";
-  const showVideo = (lesson.content_type === "video" || lesson.content_type === "mixed") && ytId;
+function getVideoMeta(url: string | null): string {
+  if (!url) return "No video link";
+
+  try {
+    const parsed = new URL(url);
+    const value = `${parsed.host}${parsed.pathname}`.replace(/\/$/, "");
+    return value.length > 80 ? `${value.slice(0, 77)}...` : value;
+  } catch {
+    return url.length > 80 ? `${url.slice(0, 77)}...` : url;
+  }
+}
+
+export default function LessonDetailScreen({ route }: Props) {
+  const { lessonId, lessonTitle } = route.params;
+  const [lesson, setLesson] = useState<LessonDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isActive = true;
+
+    setLoading(true);
+    setError(null);
+
+    getLessonDetail(lessonId)
+      .then((data) => {
+        if (isActive) {
+          setLesson(data);
+        }
+      })
+      .catch((requestError) => {
+        if (isActive) {
+          setError(requestError instanceof Error ? requestError.message : "Failed to load lesson");
+        }
+      })
+      .finally(() => {
+        if (isActive) {
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [lessonId]);
+
+  async function handleOpenVideo(url: string | null) {
+    if (!url) return;
+
+    try {
+      await Linking.openURL(url);
+    } catch {
+      Alert.alert("Unable to open video", "This video link could not be opened on this device.");
+    }
+  }
+
+  if (loading) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator size="large" />
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View style={styles.center}>
+        <Text style={styles.error}>{error}</Text>
+      </View>
+    );
+  }
+
+  const blocks = lesson?.blocks ?? [];
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>{lesson.title}</Text>
+      <Text style={styles.title}>{lesson?.title ?? lessonTitle}</Text>
 
-      {showText && lesson.content ? (
-        <View style={styles.textBlock}>{renderText(lesson.content)}</View>
-      ) : !showVideo ? (
+      {blocks.length === 0 ? (
         <Text style={styles.empty}>No content yet.</Text>
-      ) : null}
-
-      {showVideo && (
-        <View style={[styles.videoWrapper, { height: videoHeight }]}>
-          <WebView
-            source={{ uri: `https://www.youtube.com/embed/${ytId}` }}
-            allowsFullscreenVideo
-            javaScriptEnabled
-            style={{ flex: 1, borderRadius: 12 }}
-          />
-        </View>
+      ) : (
+        blocks.map((block, index) =>
+          block.block_type === "text" ? (
+            <View key={block.id} style={styles.sectionCard}>
+              <Text style={styles.sectionEyebrow}>Text section {index + 1}</Text>
+              {block.title ? <Text style={styles.sectionTitle}>{block.title}</Text> : null}
+              <View style={styles.textBlock}>{renderText(block.text_content ?? "")}</View>
+            </View>
+          ) : (
+            <TouchableOpacity
+              key={block.id}
+              activeOpacity={0.86}
+              onPress={() => handleOpenVideo(block.video_url)}
+              style={styles.videoCard}
+            >
+              <View style={styles.videoHeaderRow}>
+                <Text style={styles.videoEyebrow}>{getProviderLabel(block)}</Text>
+                <Text style={styles.videoHint}>Open externally</Text>
+              </View>
+              <Text style={styles.videoTitle}>
+                {block.title ?? `${getProviderLabel(block)} lesson video`}
+              </Text>
+              <Text style={styles.videoMeta}>{getVideoMeta(block.video_url)}</Text>
+              <View style={styles.videoFooter}>
+                <Text style={styles.videoFooterText}>Tap to open link</Text>
+              </View>
+            </TouchableOpacity>
+          )
+        )
       )}
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 16 },
-  title: { fontSize: 22, fontWeight: "700", marginBottom: 16, color: "#111" },
-  textBlock: { gap: 2, marginBottom: 20 },
-  content: { fontSize: 16, lineHeight: 26, color: "#333" },
-  bold: { fontWeight: "700", color: "#111" },
-  empty: { fontSize: 16, color: "#999" },
-  videoWrapper: {
-    borderRadius: 12,
-    overflow: "hidden",
+  container: {
+    padding: 16,
+    gap: 14,
+  },
+  center: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 24,
+  },
+  title: {
+    fontSize: 22,
+    fontWeight: "700",
+    marginBottom: 2,
+    color: "#111827",
+  },
+  error: {
+    fontSize: 15,
+    color: "#b91c1c",
+    textAlign: "center",
+  },
+  empty: {
+    fontSize: 16,
+    color: "#6b7280",
+  },
+  sectionCard: {
+    borderRadius: 18,
+    backgroundColor: "#ffffff",
+    padding: 16,
+    shadowColor: "#000000",
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  sectionEyebrow: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#64748b",
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+  },
+  sectionTitle: {
     marginTop: 8,
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#111827",
+  },
+  textBlock: {
+    gap: 2,
+    marginTop: 12,
+  },
+  content: {
+    fontSize: 16,
+    lineHeight: 26,
+    color: "#374151",
+  },
+  bold: {
+    fontWeight: "700",
+    color: "#111827",
+  },
+  videoCard: {
+    borderRadius: 18,
+    backgroundColor: "#0f172a",
+    padding: 16,
+  },
+  videoHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  videoEyebrow: {
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+    color: "#93c5fd",
+  },
+  videoHint: {
+    fontSize: 12,
+    color: "#cbd5e1",
+  },
+  videoTitle: {
+    marginTop: 10,
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#f8fafc",
+  },
+  videoMeta: {
+    marginTop: 8,
+    fontSize: 14,
+    lineHeight: 21,
+    color: "#cbd5e1",
+  },
+  videoFooter: {
+    marginTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: "#1e293b",
+    paddingTop: 12,
+  },
+  videoFooterText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#bfdbfe",
   },
 });

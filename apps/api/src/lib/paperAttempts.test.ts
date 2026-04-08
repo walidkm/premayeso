@@ -16,8 +16,8 @@ function runPaperAttemptTests() {
         subtopic_id: "subtopic-1",
         stem: "Which organelle controls cell activities?",
         options: [
-          { key: "A", text: "Nucleus" },
-          { key: "B", text: "Ribosome" },
+          { key: "A", text: "Nucleus", distractorExplanation: null },
+          { key: "B", text: "Ribosome", distractorExplanation: "Incorrect" },
         ],
         correct_option: "A",
         explanation: "The nucleus contains the genetic material.",
@@ -38,7 +38,7 @@ function runPaperAttemptTests() {
             order_index: 0,
             rubric_id: null,
             auto_marking_mode: "manual",
-            options: [{ key: "A", text: "Nucleus" }],
+            options: [{ key: "A", text: "Nucleus", distractorExplanation: "Hidden" }],
             correct_option: "A",
           },
         ],
@@ -93,6 +93,8 @@ function runPaperAttemptTests() {
   assert.equal(deliveredJson.includes("correct_option"), false);
   assert.equal(deliveredJson.includes("explanation"), false);
   assert.equal(deliveredJson.includes("expected_answer"), false);
+  assert.equal(deliveredJson.includes("distractorExplanation"), false);
+  assert.equal(deliveredJson.includes("isCorrect"), false);
 }
 
 runPaperAttemptTests();

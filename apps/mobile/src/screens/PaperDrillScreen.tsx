@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -211,6 +211,7 @@ export default function PaperDrillScreen({ route, navigation }: Props) {
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const expirySyncStartedRef = useRef(false);
 
   const questionList = attemptSummary ? flattenQuestionSummaries(attemptSummary) : [];
   const currentIndex = questionList.findIndex((entry) => entry.question.id === currentQuestionId);
@@ -283,8 +284,12 @@ export default function PaperDrillScreen({ route, navigation }: Props) {
   useEffect(() => {
     if (phase !== "attempt" || remainingSeconds === null) return;
     if (remainingSeconds <= 0) {
-      if (attemptSummary?.attempt.id) {
-        void syncAttemptState(attemptSummary.attempt.id);
+      if (attemptSummary?.attempt.id && !expirySyncStartedRef.current) {
+        expirySyncStartedRef.current = true;
+        void (async () => {
+          await persistCurrentQuestion();
+          await syncAttemptState(attemptSummary.attempt.id);
+        })();
       }
       return;
     }
@@ -300,6 +305,7 @@ export default function PaperDrillScreen({ route, navigation }: Props) {
     const summary = await getPaperAttempt(attemptId);
 
     if (summary.attempt.status === "in_progress") {
+      expirySyncStartedRef.current = false;
       setAttemptSummary(summary);
       setRemainingSeconds(summary.remainingSeconds ?? null);
       setCurrentQuestionId((current) => {
@@ -322,6 +328,7 @@ export default function PaperDrillScreen({ route, navigation }: Props) {
     setError(null);
     try {
       const started = await startPaperAttemptApi(paper.id);
+      expirySyncStartedRef.current = false;
       setDraftsByQuestionId({});
       setSelectionConflicts([]);
       setSelectedQuestionIdsBySection({});

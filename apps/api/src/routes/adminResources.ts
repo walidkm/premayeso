@@ -19,6 +19,8 @@ import {
   normalizePaperType,
   normalizeSourceType,
 } from "../lib/adminContent.js";
+import { loadPaperStructure, type PaperStructure } from "../lib/paperAttempts.js";
+import { validatePaperStructureForPublication } from "../lib/paperPublicationValidation.js";
 
 type ExamPaperListRow = {
   id: string;
@@ -89,6 +91,20 @@ async function ensurePaperHasNoAttempts(paperId: string): Promise<string | null>
   }
 
   return null;
+}
+
+async function getPublicationIssues(
+  paperId: string,
+  overrides: Partial<PaperStructure["paper"]> = {}
+) {
+  const structure = await loadPaperStructure(paperId);
+  return validatePaperStructureForPublication({
+    ...structure,
+    paper: {
+      ...structure.paper,
+      ...overrides,
+    },
+  });
 }
 
 export async function adminResourceRoutes(app: FastifyInstance) {
@@ -162,8 +178,14 @@ export async function adminResourceRoutes(app: FastifyInstance) {
     const solutionUnlockMode =
       normalizePaperSolutionUnlockMode(request.body.solution_unlock_mode) ?? "after_submit";
     const questionMode = normalizePaperQuestionMode(request.body.question_mode) ?? "one_question_at_a_time";
-    const status = normalizePaperStatus(request.body.status) ?? "published";
+    const status = normalizePaperStatus(request.body.status) ?? "draft";
     const schoolId = request.body.school_id ?? null;
+
+    if (status === "published") {
+      return reply.status(400).send({
+        error: "New papers must be created as draft until structure validation passes",
+      });
+    }
 
     if (sourceType === "school") {
       if (!schoolId) return reply.status(400).send({ error: "school_id is required when source_type is school" });
@@ -275,6 +297,56 @@ export async function adminResourceRoutes(app: FastifyInstance) {
       if (!schoolId) return reply.status(400).send({ error: "school_id is required when source_type is school" });
       const schoolError = await ensureSchoolExists(schoolId);
       if (schoolError) return reply.status(400).send({ error: schoolError });
+    }
+
+    if (status === "published" || paperResult.data.status === "published") {
+      const issues = await getPublicationIssues(request.params.id, {
+        title: request.body.title !== undefined ? normalizeOptionalText(request.body.title) : paperResult.data.title,
+        year: request.body.year !== undefined ? normalizeInteger(request.body.year) : paperResult.data.year,
+        paper_number:
+          request.body.paper_number !== undefined
+            ? normalizeInteger(request.body.paper_number)
+            : paperResult.data.paper_number,
+        session:
+          request.body.session !== undefined
+            ? normalizeOptionalText(request.body.session)
+            : paperResult.data.session,
+        paper_code:
+          request.body.paper_code !== undefined
+            ? normalizeOptionalText(request.body.paper_code)
+            : paperResult.data.paper_code,
+        duration_min:
+          request.body.duration_min !== undefined
+            ? normalizeInteger(request.body.duration_min)
+            : paperResult.data.duration_min,
+        total_marks:
+          request.body.total_marks !== undefined
+            ? normalizeInteger(request.body.total_marks)
+            : paperResult.data.total_marks,
+        instructions:
+          request.body.instructions !== undefined
+            ? normalizeOptionalText(request.body.instructions)
+            : paperResult.data.instructions,
+        has_sections:
+          request.body.has_sections !== undefined
+            ? request.body.has_sections
+            : paperResult.data.has_sections,
+        marking_mode: markingMode,
+        solution_unlock_mode: solutionUnlockMode,
+        question_mode: questionMode,
+        status,
+        is_sample:
+          request.body.is_sample !== undefined
+            ? request.body.is_sample
+            : paperResult.data.is_sample,
+      });
+
+      if (issues.length > 0) {
+        return reply.status(400).send({
+          error: "Paper cannot be published until structural validation passes",
+          issues,
+        });
+      }
     }
 
     const { data, error } = await supabaseAdmin
@@ -412,6 +484,9 @@ export async function adminResourceRoutes(app: FastifyInstance) {
     if (!paperResult.data?.subject_id || !paperResult.data.exam_path) {
       return reply.status(404).send({ error: "Exam paper not found" });
     }
+    if (paperResult.data.status === "published") {
+      return reply.status(400).send({ error: "Set the paper to draft before changing its structure" });
+    }
 
     const questionResult = await getQuestion(request.body.question_id);
     if (questionResult.error) return reply.status(500).send({ error: questionResult.error });
@@ -459,6 +534,13 @@ export async function adminResourceRoutes(app: FastifyInstance) {
     const attemptsError = await ensurePaperHasNoAttempts(existingLink.exam_paper_id);
     if (attemptsError) return reply.status(400).send({ error: attemptsError });
 
+    const paperResult = await getExamPaper(existingLink.exam_paper_id);
+    if (paperResult.error) return reply.status(500).send({ error: paperResult.error });
+    if (!paperResult.data) return reply.status(404).send({ error: "Exam paper not found" });
+    if (paperResult.data.status === "published") {
+      return reply.status(400).send({ error: "Set the paper to draft before changing its structure" });
+    }
+
     const { data, error } = await supabaseAdmin
       .from("paper_questions")
       .update({
@@ -490,6 +572,13 @@ export async function adminResourceRoutes(app: FastifyInstance) {
 
     const attemptsError = await ensurePaperHasNoAttempts(existingLink.exam_paper_id);
     if (attemptsError) return reply.status(400).send({ error: attemptsError });
+
+    const paperResult = await getExamPaper(existingLink.exam_paper_id);
+    if (paperResult.error) return reply.status(500).send({ error: paperResult.error });
+    if (!paperResult.data) return reply.status(404).send({ error: "Exam paper not found" });
+    if (paperResult.data.status === "published") {
+      return reply.status(400).send({ error: "Set the paper to draft before changing its structure" });
+    }
 
     const { error } = await supabaseAdmin.from("paper_questions").delete().eq("id", request.params.id);
     if (error) return reply.status(400).send({ error: error.message });

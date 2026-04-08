@@ -12,6 +12,22 @@ import {
   submitPaperAttempt,
 } from "../lib/paperAttempts.js";
 
+function logAttemptFailure(
+  request: FastifyRequest,
+  stage: string,
+  error: unknown,
+  context: Record<string, unknown> = {}
+) {
+  request.log.error(
+    {
+      stage,
+      ...context,
+      err: error,
+    },
+    `${stage} failed`
+  );
+}
+
 async function requireStudentToken(
   request: FastifyRequest,
   reply: FastifyReply
@@ -36,43 +52,59 @@ export async function paperAttemptRoutes(app: FastifyInstance) {
     const auth = await requireStudentToken(request, reply);
     if (!auth) return;
 
-    const attempt = await startPaperAttempt(request.params.paperId, auth.userId);
-    const structure = await loadPaperStructure(request.params.paperId);
+    try {
+      const attempt = await startPaperAttempt(request.params.paperId, auth.userId);
+      const structure = await loadPaperStructure(request.params.paperId);
 
-    return {
-      attempt,
-      paper: {
-        ...structure.paper,
-        paper_sections: structure.sections,
-      },
-      sections: structure.sections,
-      firstQuestionId: structure.questions[0]?.id ?? null,
-      questionCount: structure.questions.length,
-    };
+      return {
+        attempt,
+        paper: {
+          ...structure.paper,
+          paper_sections: structure.sections,
+        },
+        sections: structure.sections,
+        firstQuestionId: structure.questions[0]?.id ?? null,
+        questionCount: structure.questions.length,
+      };
+    } catch (error) {
+      logAttemptFailure(request, "paper_attempt_start", error, {
+        paperId: request.params.paperId,
+        userId: auth.userId,
+      });
+      return reply.status(400).send({ error: error instanceof Error ? error.message : "Failed to start paper attempt" });
+    }
   });
 
   app.get<{ Params: { attemptId: string } }>("/paper-attempts/:attemptId", async (request, reply) => {
     const auth = await requireStudentToken(request, reply);
     if (!auth) return;
 
-    const attempt = await getAttemptRecord(request.params.attemptId);
-    if (attempt.user_id !== auth.userId) {
-      return reply.status(403).send({ error: "You do not have access to this attempt" });
+    try {
+      const attempt = await getAttemptRecord(request.params.attemptId);
+      if (attempt.user_id !== auth.userId) {
+        return reply.status(403).send({ error: "You do not have access to this attempt" });
+      }
+
+      const structure = await loadPaperStructure(attempt.exam_paper_id);
+      const resolvedAttempt = await maybeAutoSubmitAttempt(attempt, structure);
+      const summary = await buildAttemptSummary(resolvedAttempt, structure);
+
+      return {
+        ...summary,
+        firstQuestionId: structure.questions[0]?.id ?? null,
+        questionCount: structure.questions.length,
+        remainingSeconds: Math.max(
+          0,
+          Math.floor((new Date(resolvedAttempt.expires_at).getTime() - Date.now()) / 1000)
+        ),
+      };
+    } catch (error) {
+      logAttemptFailure(request, "paper_attempt_load", error, {
+        attemptId: request.params.attemptId,
+        userId: auth.userId,
+      });
+      return reply.status(400).send({ error: error instanceof Error ? error.message : "Failed to load paper attempt" });
     }
-
-    const structure = await loadPaperStructure(attempt.exam_paper_id);
-    const resolvedAttempt = await maybeAutoSubmitAttempt(attempt, structure);
-    const summary = await buildAttemptSummary(resolvedAttempt, structure);
-
-    return {
-      ...summary,
-      firstQuestionId: structure.questions[0]?.id ?? null,
-      questionCount: structure.questions.length,
-      remainingSeconds: Math.max(
-        0,
-        Math.floor((new Date(resolvedAttempt.expires_at).getTime() - Date.now()) / 1000)
-      ),
-    };
   });
 
   app.get<{ Params: { attemptId: string; paperQuestionId: string } }>(
@@ -81,39 +113,48 @@ export async function paperAttemptRoutes(app: FastifyInstance) {
       const auth = await requireStudentToken(request, reply);
       if (!auth) return;
 
-      const attempt = await getAttemptRecord(request.params.attemptId);
-      if (attempt.user_id !== auth.userId) {
-        return reply.status(403).send({ error: "You do not have access to this attempt" });
+      try {
+        const attempt = await getAttemptRecord(request.params.attemptId);
+        if (attempt.user_id !== auth.userId) {
+          return reply.status(403).send({ error: "You do not have access to this attempt" });
+        }
+
+        const structure = await loadPaperStructure(attempt.exam_paper_id);
+        const resolvedAttempt = await maybeAutoSubmitAttempt(attempt, structure);
+        if (resolvedAttempt.status !== "in_progress") {
+          return reply.status(409).send({ error: "Attempt is no longer in progress" });
+        }
+
+        const paperQuestion = structure.questions.find(
+          (question) => question.id === request.params.paperQuestionId
+        );
+
+        if (!paperQuestion) {
+          return reply.status(404).send({ error: "Paper question not found" });
+        }
+
+        const savedAnswers = await getAttemptQuestionSavedAnswers(
+          request.params.attemptId,
+          request.params.paperQuestionId
+        );
+
+        return {
+          paper: {
+            ...structure.paper,
+            paper_sections: structure.sections,
+          },
+          section:
+            structure.sections.find((section) => section.id === paperQuestion.section_id) ?? null,
+          question: sanitizeQuestionForDelivery(paperQuestion, resolvedAttempt, savedAnswers),
+        };
+      } catch (error) {
+        logAttemptFailure(request, "paper_attempt_question_load", error, {
+          attemptId: request.params.attemptId,
+          paperQuestionId: request.params.paperQuestionId,
+          userId: auth.userId,
+        });
+        return reply.status(400).send({ error: error instanceof Error ? error.message : "Failed to fetch attempt question" });
       }
-
-      const structure = await loadPaperStructure(attempt.exam_paper_id);
-      const resolvedAttempt = await maybeAutoSubmitAttempt(attempt, structure);
-      if (resolvedAttempt.status !== "in_progress") {
-        return reply.status(409).send({ error: "Attempt is no longer in progress" });
-      }
-
-      const paperQuestion = structure.questions.find(
-        (question) => question.id === request.params.paperQuestionId
-      );
-
-      if (!paperQuestion) {
-        return reply.status(404).send({ error: "Paper question not found" });
-      }
-
-      const savedAnswers = await getAttemptQuestionSavedAnswers(
-        request.params.attemptId,
-        request.params.paperQuestionId
-      );
-
-      return {
-        paper: {
-          ...structure.paper,
-          paper_sections: structure.sections,
-        },
-        section:
-          structure.sections.find((section) => section.id === paperQuestion.section_id) ?? null,
-        question: sanitizeQuestionForDelivery(paperQuestion, resolvedAttempt, savedAnswers),
-      };
     }
   );
 
@@ -137,27 +178,36 @@ export async function paperAttemptRoutes(app: FastifyInstance) {
     const auth = await requireStudentToken(request, reply);
     if (!auth) return;
 
-    const attempt = await getAttemptRecord(request.params.attemptId);
-    if (attempt.user_id !== auth.userId) {
-      return reply.status(403).send({ error: "You do not have access to this attempt" });
+    try {
+      const attempt = await getAttemptRecord(request.params.attemptId);
+      if (attempt.user_id !== auth.userId) {
+        return reply.status(403).send({ error: "You do not have access to this attempt" });
+      }
+
+      const structure = await loadPaperStructure(attempt.exam_paper_id);
+      const resolvedAttempt = await maybeAutoSubmitAttempt(attempt, structure);
+      if (resolvedAttempt.status !== "in_progress") {
+        return reply.status(409).send({ error: "Attempt is no longer in progress" });
+      }
+
+      const paperQuestion = structure.questions.find(
+        (question) => question.id === request.params.paperQuestionId
+      );
+
+      if (!paperQuestion) {
+        return reply.status(404).send({ error: "Paper question not found" });
+      }
+
+      await savePaperAnswer(resolvedAttempt, paperQuestion, request.body ?? {});
+      return { saved: true };
+    } catch (error) {
+      logAttemptFailure(request, "paper_attempt_save_answer", error, {
+        attemptId: request.params.attemptId,
+        paperQuestionId: request.params.paperQuestionId,
+        userId: auth.userId,
+      });
+      return reply.status(400).send({ error: error instanceof Error ? error.message : "Failed to save answer" });
     }
-
-    const structure = await loadPaperStructure(attempt.exam_paper_id);
-    const resolvedAttempt = await maybeAutoSubmitAttempt(attempt, structure);
-    if (resolvedAttempt.status !== "in_progress") {
-      return reply.status(409).send({ error: "Attempt is no longer in progress" });
-    }
-
-    const paperQuestion = structure.questions.find(
-      (question) => question.id === request.params.paperQuestionId
-    );
-
-    if (!paperQuestion) {
-      return reply.status(404).send({ error: "Paper question not found" });
-    }
-
-    await savePaperAnswer(resolvedAttempt, paperQuestion, request.body ?? {});
-    return { saved: true };
   });
 
   app.post<{
@@ -167,45 +217,66 @@ export async function paperAttemptRoutes(app: FastifyInstance) {
     const auth = await requireStudentToken(request, reply);
     if (!auth) return;
 
-    const attempt = await getAttemptRecord(request.params.attemptId);
-    if (attempt.user_id !== auth.userId) {
-      return reply.status(403).send({ error: "You do not have access to this attempt" });
-    }
+    try {
+      const attempt = await getAttemptRecord(request.params.attemptId);
+      if (attempt.user_id !== auth.userId) {
+        return reply.status(403).send({ error: "You do not have access to this attempt" });
+      }
 
-    const structure = await loadPaperStructure(attempt.exam_paper_id);
-    const resolvedAttempt = await maybeAutoSubmitAttempt(attempt, structure);
-    if (resolvedAttempt.status !== "in_progress") {
-      const summary = await buildAttemptSummary(resolvedAttempt, structure);
-      return summary;
-    }
+      const structure = await loadPaperStructure(attempt.exam_paper_id);
+      const resolvedAttempt = await maybeAutoSubmitAttempt(attempt, structure);
+      if (resolvedAttempt.status !== "in_progress") {
+        const summary = await buildAttemptSummary(resolvedAttempt, structure);
+        return summary;
+      }
 
-    const submitResult = await submitPaperAttempt(
-      resolvedAttempt,
-      structure,
-      request.body?.selected_question_ids_by_section ?? {}
-    );
+      const submitResult = await submitPaperAttempt(
+        resolvedAttempt,
+        structure,
+        request.body?.selected_question_ids_by_section ?? {}
+      );
 
-    if (!submitResult.ok) {
-      return reply.status(400).send({
-        error: "Submission validation failed",
-        validationErrors: submitResult.validationErrors,
+      if (!submitResult.ok) {
+        logAttemptFailure(request, "paper_attempt_submit_validation", new Error("Submission validation failed"), {
+          attemptId: request.params.attemptId,
+          userId: auth.userId,
+          validationErrors: submitResult.validationErrors,
+        });
+        return reply.status(400).send({
+          error: "Submission validation failed",
+          validationErrors: submitResult.validationErrors,
+        });
+      }
+
+      return buildAttemptSummary(submitResult.attempt, structure);
+    } catch (error) {
+      logAttemptFailure(request, "paper_attempt_submit", error, {
+        attemptId: request.params.attemptId,
+        userId: auth.userId,
       });
+      return reply.status(400).send({ error: error instanceof Error ? error.message : "Failed to submit paper" });
     }
-
-    return buildAttemptSummary(submitResult.attempt, structure);
   });
 
   app.get<{ Params: { attemptId: string } }>("/paper-attempts/:attemptId/review", async (request, reply) => {
     const auth = await requireStudentToken(request, reply);
     if (!auth) return;
 
-    const attempt = await getAttemptRecord(request.params.attemptId);
-    if (attempt.user_id !== auth.userId) {
-      return reply.status(403).send({ error: "You do not have access to this attempt" });
-    }
+    try {
+      const attempt = await getAttemptRecord(request.params.attemptId);
+      if (attempt.user_id !== auth.userId) {
+        return reply.status(403).send({ error: "You do not have access to this attempt" });
+      }
 
-    const structure = await loadPaperStructure(attempt.exam_paper_id);
-    const resolvedAttempt = await maybeAutoSubmitAttempt(attempt, structure);
-    return buildAttemptSummary(resolvedAttempt, structure);
+      const structure = await loadPaperStructure(attempt.exam_paper_id);
+      const resolvedAttempt = await maybeAutoSubmitAttempt(attempt, structure);
+      return buildAttemptSummary(resolvedAttempt, structure);
+    } catch (error) {
+      logAttemptFailure(request, "paper_attempt_review_load", error, {
+        attemptId: request.params.attemptId,
+        userId: auth.userId,
+      });
+      return reply.status(400).send({ error: error instanceof Error ? error.message : "Failed to fetch review" });
+    }
   });
 }

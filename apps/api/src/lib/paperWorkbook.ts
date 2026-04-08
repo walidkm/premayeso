@@ -317,6 +317,18 @@ function mapByCode<T extends { code: string | null }>(rows: T[]): Map<string, T>
   );
 }
 
+function calculateSectionCountedMarks(section: WorkbookSection, questions: WorkbookQuestion[]): number {
+  if (section.questionSelectionMode !== "answer_any_n") {
+    return questions.reduce((sum, question) => sum + question.marks, 0);
+  }
+
+  const requiredCount = section.requiredCount ?? 0;
+  return [...questions]
+    .sort((left, right) => right.marks - left.marks)
+    .slice(0, requiredCount)
+    .reduce((sum, question) => sum + question.marks, 0);
+}
+
 export function parsePaperWorkbook(buffer: Buffer, catalog: WorkbookCatalog): ParsedPaperWorkbook {
   const issues: WorkbookIssue[] = [];
 
@@ -767,6 +779,17 @@ export function parsePaperWorkbook(buffer: Buffer, catalog: WorkbookCatalog): Pa
       );
     }
 
+    if (question.type === "structured" && question.parts.length === 0) {
+      pushIssue(
+        issues,
+        "error",
+        "questions",
+        null,
+        "type",
+        `Structured question ${question.questionNumber} requires question_parts rows`
+      );
+    }
+
     if (question.rubricCode && !rubricCodeSet.has(normalizeKey(question.rubricCode))) {
       pushIssue(issues, "error", "questions", null, "rubric_code", `Unknown rubric_code '${question.rubricCode}'`);
     }
@@ -790,38 +813,82 @@ export function parsePaperWorkbook(buffer: Buffer, catalog: WorkbookCatalog): Pa
         }
       }
     }
+
+    if (
+      question.type === "essay" &&
+      !question.rubricCode &&
+      question.parts.some((part) => !part.rubricCode)
+    ) {
+      pushIssue(
+        issues,
+        "error",
+        "question_parts",
+        null,
+        "rubric_code",
+        `Essay question ${question.questionNumber} requires a rubric_code on the question or on every part`
+      );
+    }
   }
 
   const totalQuestionMarks = questionInputs.reduce((sum, question) => sum + question.marks, 0);
-  const totalSectionMarks = sections.reduce((sum, section) => sum + (section.maxMarks ?? 0), 0);
   const totalRubricMarks = rubrics.reduce((sum, rubric) => sum + rubric.totalMarks, 0);
+  let totalSectionMarks = 0;
+
+  for (const section of sections) {
+    const sectionQuestions = questionInputs.filter(
+      (question) => normalizeKey(question.sectionCode) === normalizeKey(section.sectionCode)
+    );
+    const sectionQuestionMarks = sectionQuestions.reduce((sum, question) => sum + question.marks, 0);
+    const countedSectionMarks = calculateSectionCountedMarks(section, sectionQuestions);
+
+    if (
+      section.questionSelectionMode === "answer_any_n" &&
+      (section.requiredCount ?? 0) > sectionQuestions.length
+    ) {
+      pushIssue(
+        issues,
+        "error",
+        "paper_sections",
+        null,
+        "required_count",
+        `Section ${section.sectionCode} requires ${section.requiredCount} questions but only has ${sectionQuestions.length}`
+      );
+    }
+
+    if (section.maxMarks !== null) {
+      const expectedSectionMarks =
+        section.questionSelectionMode === "answer_any_n" ? countedSectionMarks : sectionQuestionMarks;
+      const label =
+        section.questionSelectionMode === "answer_any_n"
+          ? "counted question marks"
+          : "question marks";
+
+      if (section.maxMarks !== expectedSectionMarks) {
+        pushIssue(
+          issues,
+          "error",
+          "paper_sections",
+          null,
+          "max_marks",
+          `Section ${section.sectionCode} max_marks (${section.maxMarks}) does not match ${label} (${expectedSectionMarks})`
+        );
+      }
+    }
+
+    totalSectionMarks += section.maxMarks ?? countedSectionMarks;
+  }
 
   if (paper?.totalMarks !== null && paper?.totalMarks !== undefined) {
-    if (paper.totalMarks !== totalQuestionMarks) {
+    const expectedPaperMarks = sections.length > 0 ? totalSectionMarks : totalQuestionMarks;
+    const label = sections.length > 0 ? "counted section marks" : "total question marks";
+    if (paper.totalMarks !== expectedPaperMarks) {
       pushIssue(
         issues,
         "error",
         "exam_papers",
         firstPaperRow?.rowNumber ?? null,
         "total_marks",
-        `Paper total_marks (${paper.totalMarks}) does not match total question marks (${totalQuestionMarks})`
-      );
-    }
-  }
-
-  for (const section of sections) {
-    const sectionQuestionMarks = questionInputs
-      .filter((question) => normalizeKey(question.sectionCode) === normalizeKey(section.sectionCode))
-      .reduce((sum, question) => sum + question.marks, 0);
-
-    if (section.maxMarks !== null && section.maxMarks !== sectionQuestionMarks) {
-      pushIssue(
-        issues,
-        "error",
-        "paper_sections",
-        null,
-        "max_marks",
-        `Section ${section.sectionCode} max_marks (${section.maxMarks}) does not match question marks (${sectionQuestionMarks})`
+        `Paper total_marks (${paper.totalMarks}) does not match ${label} (${expectedPaperMarks})`
       );
     }
   }

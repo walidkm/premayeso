@@ -8,6 +8,7 @@ export const LESSON_CONTENT_TYPES = ["text", "video", "mixed"] as const;
 export const LESSON_BLOCK_TYPES = ["text", "video", "pdf"] as const;
 export const LESSON_BLOCK_TYPES = ["text", "video"] as const;
 export const VIDEO_PROVIDERS = ["youtube", "vimeo", "direct", "other"] as const;
+export const LESSON_FILES_BUCKET = "lesson-files";
 
 export type ExamPath = (typeof ALL_EXAM_PATHS)[number];
 export type PaperSourceType = (typeof PAPER_SOURCE_TYPES)[number];
@@ -64,6 +65,7 @@ export type LessonBlockRow = {
   order_index: number;
   created_at: string;
   updated_at: string;
+  file_url?: string | null;
 };
 
 export type LessonWithBlocksRow = LessonRow & {
@@ -216,6 +218,7 @@ export function buildLegacyLessonBlocks(
       order_index: blocks.length,
       created_at: LEGACY_BLOCK_TIMESTAMP,
       updated_at: LEGACY_BLOCK_TIMESTAMP,
+      file_url: null,
     });
   }
 
@@ -234,6 +237,7 @@ export function buildLegacyLessonBlocks(
       order_index: blocks.length,
       created_at: LEGACY_BLOCK_TIMESTAMP,
       updated_at: LEGACY_BLOCK_TIMESTAMP,
+      file_url: null,
     });
   }
 
@@ -247,6 +251,27 @@ export function resolveLessonBlocks(
 ): LessonBlockRow[] {
   const persistedBlocks = sortLessonBlocks(lesson.lesson_blocks);
   return persistedBlocks.length > 0 ? persistedBlocks : buildLegacyLessonBlocks(lesson);
+}
+
+export async function withSignedLessonBlockUrls(
+  blocks: LessonBlockRow[] | null | undefined
+): Promise<LessonBlockRow[]> {
+  return Promise.all(
+    (blocks ?? []).map(async (block) => {
+      if (block.block_type !== "pdf" || !block.file_path) {
+        return { ...block, file_url: null };
+      }
+
+      const { data, error } = await supabaseAdmin.storage
+        .from(LESSON_FILES_BUCKET)
+        .createSignedUrl(block.file_path, 60 * 60);
+
+      return {
+        ...block,
+        file_url: error ? null : data.signedUrl,
+      };
+    })
+  );
 }
 
 export async function getSubject(subjectId: string): Promise<{ data: SubjectRow | null; error: string | null }> {

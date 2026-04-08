@@ -196,8 +196,8 @@ export function LessonEditor({
         <div className="rounded-3xl border border-dashed border-zinc-300 bg-zinc-50 px-5 py-6">
           <p className="text-sm font-semibold text-zinc-900">Create the lesson container first</p>
           <p className="mt-2 text-sm leading-6 text-zinc-500">
-            Once the lesson is created, you can add multiple ordered text and video blocks, import any legacy content,
-            and manage the final learner-facing structure.
+            Once the lesson is created, you can add multiple ordered text blocks, video blocks, and PDF attachments,
+            import any legacy content, and manage the final learner-facing structure.
           </p>
         </div>
       )}

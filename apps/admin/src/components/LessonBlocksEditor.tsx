@@ -33,6 +33,9 @@ type BlockFormState = {
   title: string;
   text_content: string;
   video_url: string;
+  pdf_file: File | null;
+  existing_file_name: string | null;
+  existing_file_size: number | null;
 };
 
 function buildFormState(blockType: LessonBlockType, block?: LessonBlockAdminDto): BlockFormState {
@@ -43,6 +46,9 @@ function buildFormState(blockType: LessonBlockType, block?: LessonBlockAdminDto)
     title: block?.title ?? "",
     text_content: block?.text_content ?? "",
     video_url: block?.video_url ?? "",
+    pdf_file: null,
+    existing_file_name: block?.file_name ?? null,
+    existing_file_size: block?.file_size ?? null,
   };
 }
 
@@ -105,38 +111,56 @@ export function LessonBlocksEditor({ token, lesson, onChanged }: Props) {
     setError(null);
 
     try {
-      const body =
-        form.block_type === "text"
-          ? {
-              block_type: "text",
-              title: form.title,
-              text_content: form.text_content,
-            }
-          : {
-              block_type: "video",
-              title: form.title,
-              video_url: form.video_url,
-              video_provider: inferVideoProviderFromUrl(form.video_url),
-            };
+      if (form.block_type === "pdf") {
+        if (form.mode === "create" && !form.pdf_file) {
+          throw new Error("Select a PDF file before creating this block");
+        }
 
-      if (form.mode === "create") {
-        await requestJson(`/admin/lessons/${lesson.id}/blocks`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify(body),
-        });
-      } else if (form.blockId) {
-        await requestJson(`/admin/lesson-blocks/${form.blockId}`, {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify(body),
-        });
+        const body = new FormData();
+        body.append("title", form.title);
+        if (form.pdf_file) {
+          body.append("file", form.pdf_file);
+        }
+
+        if (form.mode === "create") {
+          await requestMultipartJson(`/admin/lessons/${lesson.id}/pdf-blocks`, token, "POST", body);
+        } else if (form.blockId) {
+          await requestMultipartJson(`/admin/lesson-blocks/${form.blockId}/pdf`, token, "PATCH", body);
+        }
+      } else {
+        const body =
+          form.block_type === "text"
+            ? {
+                block_type: "text",
+                title: form.title,
+                text_content: form.text_content,
+              }
+            : {
+                block_type: "video",
+                title: form.title,
+                video_url: form.video_url,
+                video_provider: inferVideoProviderFromUrl(form.video_url),
+              };
+
+        if (form.mode === "create") {
+          await requestJson(`/admin/lessons/${lesson.id}/blocks`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify(body),
+          });
+        } else if (form.blockId) {
+          await requestJson(`/admin/lesson-blocks/${form.blockId}`, {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify(body),
+          });
+        }
       }
 
       setForm(null);
@@ -274,7 +298,7 @@ export function LessonBlocksEditor({ token, lesson, onChanged }: Props) {
         <div>
           <h4 className="text-base font-semibold text-zinc-950">Lesson blocks</h4>
           <p className="mt-1 text-sm text-zinc-500">
-            Add ordered text and video sections inside this lesson container.
+            Add ordered text, video, and downloadable PDF attachments inside this lesson container.
           </p>
         </div>
         {!usesLegacyFallback ? (
@@ -336,9 +360,7 @@ export function LessonBlocksEditor({ token, lesson, onChanged }: Props) {
                   </div>
                   <span className="text-xs text-zinc-400">Legacy preview</span>
                 </div>
-                <p className="mt-3 text-sm text-zinc-700">
-                  {block.block_type === "text" ? summarizeText(block.text_content) : summarizeUrl(block.video_url)}
-                </p>
+                <p className="mt-3 text-sm text-zinc-700">{getBlockSummary(block)}</p>
               </div>
             ))}
           </div>
@@ -346,7 +368,7 @@ export function LessonBlocksEditor({ token, lesson, onChanged }: Props) {
       ) : structuredBlocks.length === 0 ? (
         <EmptyState
           title="No blocks yet"
-          description="Create the lesson container first, then add one or more text or video sections in the order learners should read them."
+          description="Create the lesson container first, then add one or more text sections, video sections, or PDF attachments in the order learners should receive them."
         />
       ) : (
         <div className="flex flex-col gap-3">
@@ -385,7 +407,7 @@ export function LessonBlocksEditor({ token, lesson, onChanged }: Props) {
                     {block.title ?? (block.block_type === "text" ? "Untitled text section" : "Untitled video section")}
                   </p>
                   <p className={`mt-2 text-sm ${form?.blockId === block.id ? "text-zinc-300" : "text-zinc-600"}`}>
-                    {block.block_type === "text" ? summarizeText(block.text_content) : summarizeUrl(block.video_url)}
+                    {getBlockSummary(block)}
                   </p>
                 </div>
 
@@ -439,7 +461,9 @@ export function LessonBlocksEditor({ token, lesson, onChanged }: Props) {
               <p className="mt-1 text-sm text-zinc-500">
                 {form.block_type === "text"
                   ? "Use text blocks for lesson explanations, steps, and notes."
-                  : "Use video blocks for external YouTube, Vimeo, or direct-hosted video links."}
+                  : form.block_type === "video"
+                    ? "Use video blocks for external YouTube, Vimeo, or direct-hosted video links."
+                    : "Upload PDF attachments learners can download or open externally."}
               </p>
             </div>
             <button type="button" onClick={() => setForm(null)} className={secondaryButtonClassName}>
@@ -452,7 +476,14 @@ export function LessonBlocksEditor({ token, lesson, onChanged }: Props) {
               <input value={form.block_type} readOnly className={`${inputClassName} bg-zinc-50 text-zinc-500`} />
             </Field>
 
-            <Field label="Section Title" hint="Optional. Use this when the block needs its own heading.">
+            <Field
+              label={form.block_type === "pdf" ? "Attachment Title" : "Section Title"}
+              hint={
+                form.block_type === "pdf"
+                  ? "Optional. Use this when the attachment needs a custom label."
+                  : "Optional. Use this when the block needs its own heading."
+              }
+            >
               <input
                 value={form.title}
                 onChange={(event) => setForm((current) => (current ? { ...current, title: event.target.value } : current))}
@@ -471,7 +502,9 @@ export function LessonBlocksEditor({ token, lesson, onChanged }: Props) {
                   className={`${inputClassName} min-h-56 resize-y font-mono text-xs`}
                 />
               </Field>
-            ) : (
+            ) : null}
+
+            {form.block_type === "video" ? (
               <div className="flex flex-col gap-4">
                 <Field label="Video URL" hint="Paste a YouTube, Vimeo, or direct video link.">
                   <input
@@ -492,7 +525,47 @@ export function LessonBlocksEditor({ token, lesson, onChanged }: Props) {
                   <p className="mt-2 text-sm text-zinc-500">{summarizeUrl(form.video_url)}</p>
                 </div>
               </div>
-            )}
+            ) : null}
+
+            {form.block_type === "pdf" ? (
+              <div className="flex flex-col gap-4">
+                <Field
+                  label="PDF File"
+                  hint={
+                    form.mode === "create"
+                      ? "Upload a single PDF attachment up to 20 MB."
+                      : "Upload a new PDF to replace the current attachment, or leave this blank to keep the existing one."
+                  }
+                >
+                  <input
+                    type="file"
+                    accept=".pdf,application/pdf"
+                    onChange={(event) =>
+                      setForm((current) =>
+                        current
+                          ? {
+                              ...current,
+                              pdf_file: event.target.files?.[0] ?? null,
+                            }
+                          : current
+                      )
+                    }
+                    className={inputClassName}
+                  />
+                </Field>
+                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+                  <p className="text-xs font-medium uppercase tracking-[0.2em] text-emerald-700">Current attachment</p>
+                  <p className="mt-2 text-sm font-semibold text-zinc-900">
+                    {form.pdf_file ? form.pdf_file.name : form.existing_file_name ?? "No PDF uploaded yet"}
+                  </p>
+                  <p className="mt-2 text-sm text-zinc-600">
+                    {form.pdf_file
+                      ? formatFileSize(form.pdf_file.size)
+                      : summarizePdf(form.existing_file_name, form.existing_file_size)}
+                  </p>
+                </div>
+              </div>
+            ) : null}
 
             <div className="flex flex-wrap items-center gap-3">
               <button type="submit" disabled={saving} className={primaryButtonClassName}>

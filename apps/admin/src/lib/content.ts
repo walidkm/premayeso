@@ -43,6 +43,7 @@ export type LessonBlockAdminDto = {
   order_index: number;
   created_at: string;
   updated_at: string;
+  file_url?: string | null;
 };
 
 export type LessonAdminDto = {
@@ -176,6 +177,7 @@ export function synthesizeLegacyLessonBlocks(
       order_index: blocks.length,
       created_at: LEGACY_BLOCK_TIMESTAMP,
       updated_at: LEGACY_BLOCK_TIMESTAMP,
+      file_url: null,
     });
   }
 
@@ -194,6 +196,7 @@ export function synthesizeLegacyLessonBlocks(
       order_index: blocks.length,
       created_at: LEGACY_BLOCK_TIMESTAMP,
       updated_at: LEGACY_BLOCK_TIMESTAMP,
+      file_url: null,
     });
   }
 

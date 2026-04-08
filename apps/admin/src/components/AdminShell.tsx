@@ -17,6 +17,8 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/lessons", label: "Lessons" },
   { href: "/exam-papers", label: "Exam Papers", superAdminOnly: true },
   { href: "/paper-links", label: "Paper Links", superAdminOnly: true },
+  { href: "/rubrics", label: "Rubrics", superAdminOnly: true },
+  { href: "/marking", label: "Marking", superAdminOnly: true },
   { href: "/schools", label: "Schools", superAdminOnly: true },
   { href: "/settings", label: "Settings", superAdminOnly: true },
 ];

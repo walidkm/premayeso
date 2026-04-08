@@ -26,7 +26,7 @@ export default async function PaperLinksPage({
       .order("order_index"),
     supabase
       .from("exam_papers")
-      .select("id, exam_path, subject_id, school_id, source_type, paper_type, exam_mode, title, year, paper_number, term, duration_min, is_sample, created_at, subjects(name, code), schools(name), paper_questions(id)")
+      .select("id, exam_path, subject_id, school_id, source_type, paper_type, exam_mode, title, year, paper_number, term, session, paper_code, duration_min, total_marks, instructions, has_sections, marking_mode, solution_unlock_mode, question_mode, status, is_sample, created_at, updated_at, subjects(name, code), schools(name), paper_questions(id), paper_sections(id)")
       .eq("exam_path", examPath)
       .order("year", { ascending: false })
       .order("paper_number", { ascending: true }),
@@ -40,14 +40,15 @@ export default async function PaperLinksPage({
   const papers = ((paperData as ExamPaperAdminDto[] | null) ?? []).map((paper) => ({
     ...paper,
     question_count: paper.paper_questions?.length ?? 0,
+    section_count: paper.paper_sections?.length ?? 0,
   }));
   const paperIds = papers.map((paper) => paper.id);
   const { data: linkData } =
     paperIds.length === 0
-      ? { data: [] as PaperQuestionAdminDto[] }
+        ? { data: [] as PaperQuestionAdminDto[] }
       : await supabase
           .from("paper_questions")
-          .select("id, exam_paper_id, question_id, order_index, section, questions(id, stem, type, difficulty, marks, question_no, exam_path, topic_id)")
+          .select("id, exam_paper_id, question_id, order_index, section, section_id, question_number, questions(id, stem, type, difficulty, marks, question_no, exam_path, topic_id)")
           .in("exam_paper_id", paperIds)
           .order("order_index");
 

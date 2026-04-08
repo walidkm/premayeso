@@ -7,6 +7,8 @@ import type { ContentTreeSubjectDto, ExamPaperAdminDto, SchoolAdminDto } from "@
 import { secondaryButtonClassName } from "@/components/AdminForm";
 import { EmptyState, SurfaceCard } from "@/components/AdminUi";
 import { ExamPaperForm } from "@/components/ExamPaperForm";
+import { PaperSectionsEditor } from "@/components/PaperSectionsEditor";
+import { PaperWorkbookImporter } from "@/components/PaperWorkbookImporter";
 
 type Props = {
   token: string;
@@ -146,16 +148,24 @@ export function ExamPapersManager({ token, role, examPath, subjects, schools, pa
             description="Exam paper editing is limited to admin and super_admin accounts."
           />
         ) : (
-          <ExamPaperForm
-            token={token}
-            subjectId={selectedSubject.id}
-            subjectName={selectedSubject.name}
-            examPath={examPath}
-            paper={selectedPaper}
-            schools={schools}
-            onSaved={handleSaved}
-            onDeleted={handleDeleted}
-          />
+          <div className="flex flex-col gap-6">
+            <ExamPaperForm
+              token={token}
+              subjectId={selectedSubject.id}
+              subjectName={selectedSubject.name}
+              examPath={examPath}
+              paper={selectedPaper}
+              schools={schools}
+              onSaved={handleSaved}
+              onDeleted={handleDeleted}
+            />
+
+            <PaperWorkbookImporter token={token} onPublished={handleRefresh} />
+
+            {selectedPaper ? (
+              <PaperSectionsEditor token={token} paperId={selectedPaper.id} onChanged={handleRefresh} />
+            ) : null}
+          </div>
         )}
 
         {isPending ? <p className="mt-4 text-xs text-zinc-400">Refreshing paper data...</p> : null}

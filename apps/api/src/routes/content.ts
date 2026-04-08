@@ -44,11 +44,6 @@ const LESSON_SELECT = "*";
 const LESSON_BLOCK_SELECT =
   "id, lesson_id, block_type, title, text_content, video_url, video_provider, file_path, file_name, file_size, order_index, created_at, updated_at";
 const LESSON_WITH_BLOCKS_SELECT = `${LESSON_SELECT}, lesson_blocks(${LESSON_BLOCK_SELECT})`;
-
-type LessonBlockDraft = {
-  block_type: "text" | "video" | "pdf";
-  "id, lesson_id, block_type, title, text_content, video_url, video_provider, order_index, created_at, updated_at";
-const LESSON_WITH_BLOCKS_SELECT = `${LESSON_SELECT}, lesson_blocks(${LESSON_BLOCK_SELECT})`;
 const MAX_LESSON_PDF_SIZE_BYTES = 20 * 1024 * 1024;
 
 type LessonBlockDraft = {
@@ -184,7 +179,6 @@ function buildLessonBlockDraft(input: {
   video_provider?: string | null;
 }): { data: LessonBlockDraft | null; error: string | null } {
   const blockType = normalizeLessonBlockType(input.block_type);
-  if (!blockType || blockType === "pdf") {
   if (!blockType) {
     return { data: null, error: "Block type must be text, video, or pdf" };
   }
@@ -990,24 +984,14 @@ export async function contentRoutes(app: FastifyInstance) {
     }
 
     const timestamp = new Date().toISOString();
-    const reorderPayload = requestedIds.map((id, index) => {
-      const block = blockById.get(id)!;
-      return {
-        id: block.id,
-        lesson_id: block.lesson_id,
-        block_type: block.block_type,
-        title: block.title,
-        text_content: block.text_content,
-        video_url: block.video_url,
-        video_provider: block.video_provider,
-        file_path: block.file_path,
-        file_name: block.file_name,
-        file_size: block.file_size,
-        order_index: index,
-        created_at: block.created_at,
-        updated_at: timestamp,
-      };
-    });
+    const reorderResults = await Promise.all(
+      requestedIds.map((id, index) =>
+        supabaseAdmin
+          .from("lesson_blocks")
+          .update({ order_index: index, updated_at: timestamp })
+          .eq("id", id)
+      )
+    );
 
     const reorderError = reorderResults.find((result) => result.error)?.error;
     if (reorderError) return reply.status(400).send({ error: reorderError.message });

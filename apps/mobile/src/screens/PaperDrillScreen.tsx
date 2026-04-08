@@ -1,351 +1,833 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { getPaperQuestions, PaperQuestion } from "../lib/api";
+import {
+  type ExamPaperDetail,
+  type PaperAttemptQuestion,
+  type PaperAttemptQuestionSummary,
+  type PaperAttemptSectionSummary,
+  type PaperAttemptSummary,
+  type PaperSection,
+  getPaperAttempt,
+  getPaperAttemptQuestion,
+  getPaperAttemptReview,
+  getPaperDetail,
+  savePaperAttemptAnswer,
+  startPaperAttemptApi,
+  submitPaperAttemptApi,
+} from "../lib/api";
 import MathText from "../components/MathText";
 import { RootStackParamList } from "../../App";
 
 type Props = NativeStackScreenProps<RootStackParamList, "PaperDrill">;
+type Phase = "cover" | "attempt" | "selection" | "review";
 
-// 2.5 hours in seconds — standard MANEB paper allowance
-const DEFAULT_DURATION = 2.5 * 60 * 60;
+type DraftPartAnswer = {
+  selectedOption: string | null;
+  textAnswer: string;
+  numericAnswer: string;
+};
 
-function formatTime(secs: number): string {
-  const h = Math.floor(secs / 3600);
-  const m = Math.floor((secs % 3600) / 60);
-  const s = secs % 60;
-  if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+type DraftAnswer = {
+  selectedOption: string | null;
+  textAnswer: string;
+  numericAnswer: string;
+  partAnswers: Record<string, DraftPartAnswer>;
+};
+
+type SubmissionConflict = {
+  sectionId: string;
+  sectionCode: string;
+  message: string;
+  requiredCount: number;
+  questions: PaperAttemptQuestionSummary[];
+};
+
+function formatTime(totalSeconds: number): string {
+  const safeSeconds = Math.max(0, totalSeconds);
+  const hours = Math.floor(safeSeconds / 3600);
+  const minutes = Math.floor((safeSeconds % 3600) / 60);
+  const seconds = safeSeconds % 60;
+  if (hours > 0) return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
-function timerColor(secs: number): string {
-  if (secs < 5 * 60) return "#dc2626";   // < 5 min — red
-  if (secs < 30 * 60) return "#d97706";  // < 30 min — amber
-  return "#16a34a";                       // green
+function timerColor(totalSeconds: number | null): string {
+  if (totalSeconds === null) return "#166534";
+  if (totalSeconds < 5 * 60) return "#b91c1c";
+  if (totalSeconds < 30 * 60) return "#b45309";
+  return "#166534";
 }
 
-type Phase = "intro" | "drill" | "review";
+function emptyDraftPart(): DraftPartAnswer {
+  return { selectedOption: null, textAnswer: "", numericAnswer: "" };
+}
+
+function emptyDraft(): DraftAnswer {
+  return { selectedOption: null, textAnswer: "", numericAnswer: "", partAnswers: {} };
+}
+
+function hasPartValue(part: DraftPartAnswer | undefined): boolean {
+  if (!part) return false;
+  return Boolean(part.selectedOption || part.textAnswer.trim() || part.numericAnswer.trim());
+}
+
+function hasDraftValue(draft: DraftAnswer | undefined): boolean {
+  if (!draft) return false;
+  if (draft.selectedOption || draft.textAnswer.trim() || draft.numericAnswer.trim()) return true;
+  return Object.values(draft.partAnswers).some((part) => hasPartValue(part));
+}
+
+function buildDraftFromQuestion(question: PaperAttemptQuestion): DraftAnswer {
+  const nextDraft = emptyDraft();
+  for (const answer of question.answers) {
+    if (answer.questionPartId) {
+      nextDraft.partAnswers[answer.questionPartId] = {
+        selectedOption: answer.selectedOption ?? null,
+        textAnswer: answer.textAnswer ?? "",
+        numericAnswer:
+          answer.numericAnswer !== null && answer.numericAnswer !== undefined
+            ? String(answer.numericAnswer)
+            : "",
+      };
+      continue;
+    }
+
+    nextDraft.selectedOption = answer.selectedOption ?? null;
+    nextDraft.textAnswer = answer.textAnswer ?? "";
+    nextDraft.numericAnswer =
+      answer.numericAnswer !== null && answer.numericAnswer !== undefined
+        ? String(answer.numericAnswer)
+        : "";
+  }
+  return nextDraft;
+}
+
+function serializeDraft(question: PaperAttemptQuestion, draft: DraftAnswer) {
+  if (question.parts.length > 0) {
+    const partAnswers = question.parts
+      .map((part) => {
+        const partDraft = draft.partAnswers[part.id];
+        if (!hasPartValue(partDraft)) return null;
+        return {
+          questionPartId: part.id,
+          selectedOption: partDraft?.selectedOption ?? null,
+          textAnswer:
+            !part.options.length && partDraft?.textAnswer.trim().length
+              ? partDraft.textAnswer
+              : null,
+          numericAnswer:
+            !part.options.length && partDraft?.numericAnswer.trim().length
+              ? Number(partDraft.numericAnswer)
+              : null,
+        };
+      })
+      .filter(
+        (
+          partAnswer
+        ): partAnswer is {
+          questionPartId: string;
+          selectedOption: string | null;
+          textAnswer: string | null;
+          numericAnswer: number | null;
+        } => Boolean(partAnswer)
+      );
+
+    return {
+      partAnswers,
+    };
+  }
+
+  if (question.type === "mcq" || question.type === "true_false") {
+    return { selectedOption: draft.selectedOption ?? null };
+  }
+
+  if (question.type === "numeric") {
+    return {
+      numericAnswer: draft.numericAnswer.trim().length ? Number(draft.numericAnswer) : null,
+    };
+  }
+
+  return { textAnswer: draft.textAnswer.trim().length ? draft.textAnswer : null };
+}
+
+function formatPaperTitle(paper: { year?: number | null; paper_number?: number | null; title?: string | null }) {
+  const parts: string[] = [];
+  if (paper.year) parts.push(String(paper.year));
+  if (paper.paper_number) parts.push(`Paper ${paper.paper_number}`);
+  if (!parts.length && paper.title) parts.push(paper.title);
+  return parts.join(" / ") || "Exam paper";
+}
+
+function flattenQuestionSummaries(summary: PaperAttemptSummary): Array<{
+  section: PaperAttemptSectionSummary;
+  question: PaperAttemptQuestionSummary;
+}> {
+  return summary.sections.flatMap((section) =>
+    section.questions.map((question) => ({ section, question }))
+  );
+}
+
+function buildSectionRule(section: PaperSection | PaperAttemptSectionSummary): string {
+  const selectionMode =
+    "questionSelectionMode" in section
+      ? section.questionSelectionMode
+      : section.question_selection_mode;
+  const requiredCount =
+    "requiredCount" in section ? section.requiredCount : section.required_count;
+
+  if (selectionMode === "answer_any_n") {
+    return `Answer any ${requiredCount ?? 0}`;
+  }
+  return "Answer all questions";
+}
 
 export default function PaperDrillScreen({ route, navigation }: Props) {
   const { paper, subject } = route.params;
 
-  const [questions, setQuestions] = useState<PaperQuestion[]>([]);
+  const [phase, setPhase] = useState<Phase>("cover");
+  const [paperDetail, setPaperDetail] = useState<ExamPaperDetail | null>(null);
+  const [attemptSummary, setAttemptSummary] = useState<PaperAttemptSummary | null>(null);
+  const [reviewSummary, setReviewSummary] = useState<PaperAttemptSummary | null>(null);
+  const [currentQuestion, setCurrentQuestion] = useState<PaperAttemptQuestion | null>(null);
+  const [currentSection, setCurrentSection] = useState<PaperSection | null>(null);
+  const [currentQuestionId, setCurrentQuestionId] = useState<string | null>(null);
+  const [draft, setDraft] = useState<DraftAnswer>(emptyDraft());
+  const [draftsByQuestionId, setDraftsByQuestionId] = useState<Record<string, DraftAnswer>>({});
+  const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
+  const [selectionConflicts, setSelectionConflicts] = useState<SubmissionConflict[]>([]);
+  const [selectedQuestionIdsBySection, setSelectedQuestionIdsBySection] = useState<Record<string, string[]>>({});
   const [loading, setLoading] = useState(true);
+  const [questionLoading, setQuestionLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [phase, setPhase] = useState<Phase>("intro");
-  const [index, setIndex] = useState(0);
-  const [answers, setAnswers] = useState<Record<number, string>>({}); // order_index → chosen key
-  const [timeLeft, setTimeLeft] = useState(DEFAULT_DURATION);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const questionList = attemptSummary ? flattenQuestionSummaries(attemptSummary) : [];
+  const currentIndex = questionList.findIndex((entry) => entry.question.id === currentQuestionId);
+  const currentQuestionSummary = currentIndex >= 0 ? questionList[currentIndex] : null;
+  const sectionCards = paperDetail?.paper_sections ?? [];
 
   useEffect(() => {
-    getPaperQuestions(paper.id)
-      .then(setQuestions)
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
+    let cancelled = false;
+    getPaperDetail(paper.id)
+      .then((detail) => {
+        if (!cancelled) setPaperDetail(detail);
+      })
+      .catch((requestError) => {
+        if (!cancelled) {
+          setError(requestError instanceof Error ? requestError.message : "Failed to load paper");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [paper.id]);
 
-  // Timer
   useEffect(() => {
-    if (phase !== "drill") return;
-    timerRef.current = setInterval(() => {
-      setTimeLeft((t) => {
-        if (t <= 1) {
-          clearInterval(timerRef.current!);
-          setPhase("review");
-          return 0;
-        }
-        return t - 1;
-      });
-    }, 1000);
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, [phase]);
+    if (phase !== "attempt" || !attemptSummary?.attempt.id || !currentQuestionId) return;
 
-  const handleSubmit = useCallback(() => {
-    const answered = Object.keys(answers).length;
-    const total = questions.length;
-    if (answered < total) {
-      Alert.alert(
-        "Submit paper?",
-        `You have answered ${answered} of ${total} questions. Unanswered questions will be marked wrong.`,
-        [
-          { text: "Continue exam", style: "cancel" },
-          {
-            text: "Submit",
-            style: "destructive",
-            onPress: () => {
-              if (timerRef.current) clearInterval(timerRef.current);
+    let cancelled = false;
+    setQuestionLoading(true);
+    setError(null);
+
+    getPaperAttemptQuestion(attemptSummary.attempt.id, currentQuestionId)
+      .then((response) => {
+        if (cancelled) return;
+        const nextDraft = buildDraftFromQuestion(response.question);
+        setCurrentQuestion(response.question);
+        setCurrentSection(response.section);
+        setDraft(nextDraft);
+        setDraftsByQuestionId((current) => ({ ...current, [response.question.id]: nextDraft }));
+        setRemainingSeconds(response.question.remainingSeconds);
+      })
+      .catch(async (requestError) => {
+        if (cancelled) return;
+        const message = requestError instanceof Error ? requestError.message : "Failed to load question";
+        if (message.includes("no longer in progress")) {
+          try {
+            const review = await getPaperAttemptReview(attemptSummary.attempt.id);
+            if (!cancelled) {
+              setReviewSummary(review);
+              setRemainingSeconds(review.remainingSeconds ?? 0);
               setPhase("review");
-            },
-          },
-        ]
-      );
-    } else {
-      if (timerRef.current) clearInterval(timerRef.current);
-      setPhase("review");
+            }
+            return;
+          } catch {
+            // fall through to visible error below
+          }
+        }
+        setError(message);
+      })
+      .finally(() => {
+        if (!cancelled) setQuestionLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [attemptSummary?.attempt.id, currentQuestionId, phase]);
+
+  useEffect(() => {
+    if (phase !== "attempt" || remainingSeconds === null) return;
+    if (remainingSeconds <= 0) {
+      if (attemptSummary?.attempt.id) {
+        void syncAttemptState(attemptSummary.attempt.id);
+      }
+      return;
     }
-  }, [answers, questions.length]);
 
-  if (loading) {
-    return <View style={s.center}><ActivityIndicator size="large" /></View>;
-  }
-  if (error) {
-    return <View style={s.center}><Text style={s.err}>{error}</Text></View>;
-  }
+    const timer = setTimeout(() => {
+      setRemainingSeconds((current) => (current === null ? current : Math.max(0, current - 1)));
+    }, 1000);
 
-  // ── Intro screen ───────────────────────────────────────────────
+    return () => clearTimeout(timer);
+  }, [attemptSummary?.attempt.id, phase, remainingSeconds]);
 
-  if (phase === "intro") {
-    const yearStr = paper.year ? String(paper.year) : "";
-    const paperStr = paper.paper_number ? ` · Paper ${paper.paper_number}` : "";
-    return (
-      <ScrollView contentContainerStyle={s.introContainer}>
-        <Text style={s.introSubject}>{subject.name}</Text>
-        <Text style={s.introTitle}>{yearStr}{paperStr} Past Paper</Text>
-        {paper.title && <Text style={s.introMeta}>{paper.title}</Text>}
+  async function syncAttemptState(attemptId: string) {
+    const summary = await getPaperAttempt(attemptId);
 
-        <View style={s.infoGrid}>
-          {[
-            { label: "Questions", value: String(questions.length) },
-            { label: "Time allowed", value: "2 hr 30 min" },
-            { label: "Exam path", value: paper.exam_path ?? "—" },
-            { label: "Mode", value: paper.exam_mode === "paper_layout" ? "Paper layout" : "Randomised" },
-          ].map((item) => (
-            <View key={item.label} style={s.infoCell}>
-              <Text style={s.infoCellValue}>{item.value}</Text>
-              <Text style={s.infoCellLabel}>{item.label}</Text>
-            </View>
-          ))}
-        </View>
+    if (summary.attempt.status === "in_progress") {
+      setAttemptSummary(summary);
+      setRemainingSeconds(summary.remainingSeconds ?? null);
+      setCurrentQuestionId((current) => {
+        if (current && flattenQuestionSummaries(summary).some((entry) => entry.question.id === current)) {
+          return current;
+        }
+        return summary.firstQuestionId ?? flattenQuestionSummaries(summary)[0]?.question.id ?? null;
+      });
+      return summary;
+    }
 
-        <View style={s.instructions}>
-          <Text style={s.instructionsTitle}>Instructions</Text>
-          <Text style={s.instructionsText}>
-            • Answer all questions.{"\n"}
-            • You can navigate back and change answers.{"\n"}
-            • The timer starts when you tap Begin.{"\n"}
-            • Your results are shown after submission.
-          </Text>
-        </View>
-
-        {questions.length === 0 ? (
-          <Text style={s.noQuestions}>
-            No questions uploaded for this paper yet. Upload via the admin dashboard.
-          </Text>
-        ) : (
-          <TouchableOpacity
-            style={s.beginBtn}
-            onPress={() => setPhase("drill")}
-          >
-            <Text style={s.beginBtnText}>Begin exam</Text>
-          </TouchableOpacity>
-        )}
-      </ScrollView>
-    );
+    setReviewSummary(summary);
+    setRemainingSeconds(summary.remainingSeconds ?? 0);
+    setPhase("review");
+    return summary;
   }
 
-  // ── Review / results ───────────────────────────────────────────
+  async function handleBeginExam() {
+    setLoading(true);
+    setError(null);
+    try {
+      const started = await startPaperAttemptApi(paper.id);
+      setDraftsByQuestionId({});
+      setSelectionConflicts([]);
+      setSelectedQuestionIdsBySection({});
+      await syncAttemptState(started.attempt.id);
+      setPhase("attempt");
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Failed to start paper");
+    } finally {
+      setLoading(false);
+    }
+  }
 
-  if (phase === "review") {
-    const scored = questions.filter((pq) => {
-      const chosen = answers[pq.order_index];
-      return chosen === (pq.question as any).correct_option;
+  async function persistCurrentQuestion(): Promise<boolean> {
+    if (!attemptSummary?.attempt.id || !currentQuestion || !currentQuestionId) return true;
+
+    setSaving(true);
+    setError(null);
+    try {
+      await savePaperAttemptAnswer(
+        attemptSummary.attempt.id,
+        currentQuestionId,
+        serializeDraft(currentQuestion, draft)
+      );
+      return true;
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Failed to save answer");
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function navigateToQuestion(questionId: string) {
+    if (questionId === currentQuestionId) return;
+    const saved = await persistCurrentQuestion();
+    if (!saved) return;
+    setCurrentQuestionId(questionId);
+  }
+
+  function updateDraft(nextDraft: DraftAnswer) {
+    setDraft(nextDraft);
+    if (currentQuestionId) {
+      setDraftsByQuestionId((current) => ({ ...current, [currentQuestionId]: nextDraft }));
+    }
+  }
+
+  function toggleSelection(sectionId: string, questionId: string, requiredCount: number) {
+    setSelectedQuestionIdsBySection((current) => {
+      const selected = current[sectionId] ?? [];
+      if (selected.includes(questionId)) {
+        return { ...current, [sectionId]: selected.filter((candidate) => candidate !== questionId) };
+      }
+      if (selected.length >= requiredCount) {
+        Alert.alert("Selection limit", `This section only counts ${requiredCount} questions.`);
+        return current;
+      }
+      return { ...current, [sectionId]: [...selected, questionId] };
     });
-    // Note: correct_option is not returned by the API (security) — score against
-    // answers only (actual grading would require a server call). For MVP we show
-    // "answered" vs "skipped" and invite the user to review.
-    const answered = Object.keys(answers).length;
-    const skipped = questions.length - answered;
-
-    // Group by section for review
-    const sections = questions.reduce<Record<string, PaperQuestion[]>>((acc, pq) => {
-      const key = pq.section ?? "General";
-      if (!acc[key]) acc[key] = [];
-      acc[key].push(pq);
-      return acc;
-    }, {});
-
-    return (
-      <ScrollView contentContainerStyle={s.reviewContainer}>
-        <Text style={s.reviewTitle}>Paper complete</Text>
-        <Text style={s.reviewSub}>
-          {paper.year} {paper.paper_number ? `Paper ${paper.paper_number}` : ""}
-        </Text>
-
-        <View style={s.scoreSummary}>
-          <View style={s.scoreCell}>
-            <Text style={s.scoreCellValue}>{answered}</Text>
-            <Text style={s.scoreCellLabel}>Answered</Text>
-          </View>
-          <View style={[s.scoreCell, s.scoreCellMid]}>
-            <Text style={[s.scoreCellValue, { color: "#dc2626" }]}>{skipped}</Text>
-            <Text style={s.scoreCellLabel}>Skipped</Text>
-          </View>
-          <View style={s.scoreCell}>
-            <Text style={s.scoreCellValue}>{questions.length}</Text>
-            <Text style={s.scoreCellLabel}>Total</Text>
-          </View>
-        </View>
-
-        <Text style={s.reviewNote}>
-          💡 Correct answers are shown in the explanation. Use the review below to check your work.
-        </Text>
-
-        {Object.entries(sections).map(([section, pqs]) => (
-          <View key={section} style={s.reviewSection}>
-            <Text style={s.reviewSectionHeader}>{section}</Text>
-            {pqs.map((pq) => {
-              const chosen = answers[pq.order_index];
-              return (
-                <View key={pq.order_index} style={s.reviewRow}>
-                  <View style={s.reviewRowHeader}>
-                    <Text style={s.reviewQNum}>Q{pq.order_index + 1}</Text>
-                    <View style={[
-                      s.reviewBadge,
-                      chosen ? s.reviewBadgeAnswered : s.reviewBadgeSkipped,
-                    ]}>
-                      <Text style={s.reviewBadgeText}>
-                        {chosen ? `Answered: ${chosen}` : "Skipped"}
-                      </Text>
-                    </View>
-                  </View>
-                  <MathText text={pq.question.stem} fontSize={13} color="#444" />
-                  {pq.question.explanation && (
-                    <Text style={s.reviewExplanation}>
-                      {pq.question.explanation}
-                    </Text>
-                  )}
-                </View>
-              );
-            })}
-          </View>
-        ))}
-
-        <TouchableOpacity style={s.doneBtn} onPress={() => navigation.goBack()}>
-          <Text style={s.doneBtnText}>Back to papers</Text>
-        </TouchableOpacity>
-      </ScrollView>
-    );
   }
 
-  // ── Drill screen ───────────────────────────────────────────────
+  async function handleSubmit(selectedMap?: Record<string, string[]>) {
+    if (!attemptSummary?.attempt.id) return;
 
-  const pq = questions[index];
-  const q = pq.question;
-  const chosen = answers[pq.order_index];
-  const answeredCount = Object.keys(answers).length;
+    const saved = await persistCurrentQuestion();
+    if (!saved) return;
 
-  // Detect section change
-  const prevSection = index > 0 ? questions[index - 1].section : null;
-  const showSectionHeader = pq.section && pq.section !== prevSection;
+    setSubmitting(true);
+    setError(null);
 
-  return (
-    <View style={s.drillRoot}>
-      {/* Fixed header */}
-      <View style={s.drillHeader}>
-        <Text style={s.drillCounter}>
-          {index + 1} / {questions.length}
-          {answeredCount > 0 && (
-            <Text style={s.drillAnswered}> · {answeredCount} answered</Text>
-          )}
-        </Text>
-        <Text style={[s.drillTimer, { color: timerColor(timeLeft) }]}>
-          {formatTime(timeLeft)}
-        </Text>
-      </View>
+    try {
+      const summary = await submitPaperAttemptApi(
+        attemptSummary.attempt.id,
+        selectedMap ?? selectedQuestionIdsBySection
+      );
+      setReviewSummary(summary);
+      setRemainingSeconds(summary.remainingSeconds ?? 0);
+      setPhase("review");
+    } catch (requestError) {
+      const message = requestError instanceof Error ? requestError.message : "Failed to submit paper";
+      const validationErrors =
+        requestError &&
+        typeof requestError === "object" &&
+        "validationErrors" in requestError &&
+        Array.isArray((requestError as { validationErrors?: unknown }).validationErrors)
+          ? (requestError as {
+              validationErrors?: Array<{
+                sectionId: string;
+                sectionCode: string;
+                message: string;
+                answeredQuestionIds?: string[];
+              }>;
+            }).validationErrors ?? []
+          : [];
 
-      {/* Question body */}
-      <ScrollView contentContainerStyle={s.drillBody}>
-        {showSectionHeader && (
-          <View style={s.sectionBanner}>
-            <Text style={s.sectionBannerText}>Section {pq.section}</Text>
-          </View>
-        )}
+      const blockingMessages = validationErrors
+        .filter((entry) => !entry.answeredQuestionIds?.length)
+        .map((entry) => entry.message);
 
-        {q.marks && <Text style={s.marks}>[{q.marks} mark{q.marks !== 1 ? "s" : ""}]</Text>}
+      if (blockingMessages.length > 0) {
+        Alert.alert("Submission blocked", blockingMessages.join("\n"));
+      }
 
-        <MathText text={q.stem} fontSize={17} color="#111" />
+      const conflicts = validationErrors
+        .filter((entry) => (entry.answeredQuestionIds?.length ?? 0) > 0)
+        .map((entry) => {
+          const section = attemptSummary.sections.find(
+            (candidate) => candidate.id === entry.sectionId || candidate.sectionCode === entry.sectionCode
+          );
+          return {
+            sectionId: entry.sectionId,
+            sectionCode: entry.sectionCode,
+            message: entry.message,
+            requiredCount: section?.requiredCount ?? 0,
+            questions:
+              section?.questions.filter((question) =>
+                (entry.answeredQuestionIds ?? []).includes(question.id)
+              ) ?? [],
+          } satisfies SubmissionConflict;
+        });
 
-        <View style={s.options}>
-          {q.options.map((opt) => (
+      if (conflicts.length > 0) {
+        const nextSelections: Record<string, string[]> = {};
+        for (const conflict of conflicts) {
+          nextSelections[conflict.sectionId] =
+            selectedQuestionIdsBySection[conflict.sectionId] ??
+            conflict.questions.slice(0, conflict.requiredCount).map((question) => question.id);
+        }
+        setSelectionConflicts(conflicts);
+        setSelectedQuestionIdsBySection(nextSelections);
+        setPhase("selection");
+      } else {
+        setError(message);
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  function renderPartInput(partId: string, options: Array<{ key: string; text: string }>) {
+    const partDraft = draft.partAnswers[partId] ?? emptyDraftPart();
+
+    if (options.length > 0) {
+      return (
+        <View style={s.optionList}>
+          {options.map((option) => (
             <TouchableOpacity
-              key={opt.key}
-              style={[s.option, chosen === opt.key && s.optionSelected]}
+              key={option.key}
+              style={[s.optionCard, partDraft.selectedOption === option.key && s.optionCardSelected]}
               onPress={() =>
-                setAnswers((prev) => ({ ...prev, [pq.order_index]: opt.key }))
+                updateDraft({
+                  ...draft,
+                  partAnswers: {
+                    ...draft.partAnswers,
+                    [partId]: { ...partDraft, selectedOption: option.key },
+                  },
+                })
               }
             >
-              <Text style={[s.optionKey, chosen === opt.key && s.optionKeySelected]}>
-                {opt.key}
+              <Text style={[s.optionKey, partDraft.selectedOption === option.key && s.optionKeySelected]}>
+                {option.key}
               </Text>
               <View style={{ flex: 1 }}>
-                <MathText
-                  text={opt.text}
-                  fontSize={15}
-                  color={chosen === opt.key ? "#111" : "#444"}
-                />
+                <MathText text={option.text} fontSize={14} color="#334155" />
               </View>
             </TouchableOpacity>
           ))}
         </View>
+      );
+    }
+
+    return (
+      <TextInput
+        value={partDraft.textAnswer}
+        onChangeText={(value) =>
+          updateDraft({
+            ...draft,
+            partAnswers: {
+              ...draft.partAnswers,
+              [partId]: { ...partDraft, textAnswer: value },
+            },
+          })
+        }
+        placeholder="Write your answer"
+        multiline
+        style={[s.textInput, s.multilineInput]}
+        textAlignVertical="top"
+      />
+    );
+  }
+
+  function renderQuestionInput(question: PaperAttemptQuestion) {
+    if (question.parts.length > 0) {
+      return (
+        <View style={s.partsList}>
+          {question.parts.map((part) => (
+            <View key={part.id} style={s.partCard}>
+              <View style={s.rowBetween}>
+                <Text style={s.partLabel}>{part.partLabel}</Text>
+                <Text style={s.metaText}>{part.marks} marks</Text>
+              </View>
+              <MathText text={part.body} fontSize={15} color="#0f172a" />
+              {renderPartInput(part.id, part.options)}
+            </View>
+          ))}
+        </View>
+      );
+    }
+
+    if (question.type === "mcq" || question.type === "true_false") {
+      return (
+        <View style={s.optionList}>
+          {question.options.map((option) => (
+            <TouchableOpacity
+              key={option.key}
+              style={[s.optionCard, draft.selectedOption === option.key && s.optionCardSelected]}
+              onPress={() => updateDraft({ ...draft, selectedOption: option.key })}
+            >
+              <Text style={[s.optionKey, draft.selectedOption === option.key && s.optionKeySelected]}>
+                {option.key}
+              </Text>
+              <View style={{ flex: 1 }}>
+                <MathText text={option.text} fontSize={15} color="#334155" />
+              </View>
+            </TouchableOpacity>
+          ))}
+        </View>
+      );
+    }
+
+    if (question.type === "numeric") {
+      return (
+        <TextInput
+          value={draft.numericAnswer}
+          onChangeText={(value) => updateDraft({ ...draft, numericAnswer: value })}
+          keyboardType="numeric"
+          placeholder="Enter a number"
+          style={s.textInput}
+        />
+      );
+    }
+
+    return (
+      <TextInput
+        value={draft.textAnswer}
+        onChangeText={(value) => updateDraft({ ...draft, textAnswer: value })}
+        placeholder={question.type === "essay" ? "Write your essay answer" : "Write your answer"}
+        multiline
+        style={[s.textInput, s.multilineInput, question.type === "essay" && s.essayInput]}
+        textAlignVertical="top"
+      />
+    );
+  }
+
+  if (loading) {
+    return (
+      <View style={s.centered}>
+        <ActivityIndicator size="large" />
+      </View>
+    );
+  }
+
+  if (error && phase === "cover") {
+    return (
+      <View style={s.centered}>
+        <Text style={s.errorText}>{error}</Text>
+      </View>
+    );
+  }
+
+  if (phase === "cover") {
+    return (
+      <ScrollView contentContainerStyle={s.screen}>
+        <Text style={s.kicker}>{subject.name}</Text>
+        <Text style={s.title}>{formatPaperTitle(paperDetail ?? paper)}</Text>
+        {paperDetail?.title ? <Text style={s.subtitle}>{paperDetail.title}</Text> : null}
+
+        <View style={s.cardGrid}>
+          <View style={s.card}><Text style={s.cardValue}>{paper.question_count}</Text><Text style={s.cardLabel}>Questions</Text></View>
+          <View style={s.card}><Text style={s.cardValue}>{paperDetail?.duration_min ?? paper.duration_min ?? 150}</Text><Text style={s.cardLabel}>Minutes</Text></View>
+          <View style={s.card}><Text style={s.cardValue}>{paperDetail?.total_marks ?? paper.total_marks ?? "-"}</Text><Text style={s.cardLabel}>Marks</Text></View>
+          <View style={s.card}><Text style={s.cardValue}>{sectionCards.length}</Text><Text style={s.cardLabel}>Sections</Text></View>
+        </View>
+
+        <View style={s.infoCard}>
+          <Text style={s.sectionTitle}>Instructions</Text>
+          <Text style={s.infoText}>{paperDetail?.instructions?.trim() || "Read each section rule before you begin."}</Text>
+        </View>
+
+        {sectionCards.map((section) => (
+          <View key={section.id} style={s.sectionCard}>
+            <View style={s.rowBetween}>
+              <Text style={s.sectionCode}>{section.section_code}</Text>
+              <Text style={s.ruleText}>{buildSectionRule(section)}</Text>
+            </View>
+            <Text style={s.sectionTitle}>{section.title ?? `Section ${section.section_code}`}</Text>
+            {section.instructions ? <Text style={s.infoText}>{section.instructions}</Text> : null}
+          </View>
+        ))}
+
+        {error ? <Text style={s.errorText}>{error}</Text> : null}
+
+        <TouchableOpacity style={s.primaryButton} onPress={() => void handleBeginExam()}>
+          <Text style={s.primaryButtonText}>Begin exam</Text>
+        </TouchableOpacity>
+      </ScrollView>
+    );
+  }
+
+  if (phase === "selection") {
+    return (
+      <ScrollView contentContainerStyle={s.screen}>
+        <Text style={s.title}>Select counted questions</Text>
+        <Text style={s.subtitle}>Choose which answers should count in optional sections before submitting.</Text>
+
+        {selectionConflicts.map((conflict) => {
+          const selected = selectedQuestionIdsBySection[conflict.sectionId] ?? [];
+          return (
+            <View key={conflict.sectionId} style={s.sectionCard}>
+              <Text style={s.sectionCode}>{conflict.sectionCode}</Text>
+              <Text style={s.sectionTitle}>{conflict.message}</Text>
+              <Text style={s.infoText}>Select {conflict.requiredCount} questions.</Text>
+
+              {conflict.questions.map((question) => {
+                const active = selected.includes(question.id);
+                return (
+                  <TouchableOpacity
+                    key={question.id}
+                    style={[s.selectionOption, active && s.selectionOptionActive]}
+                    onPress={() => toggleSelection(conflict.sectionId, question.id, conflict.requiredCount)}
+                  >
+                    <Text style={[s.selectionTitle, active && s.selectionTitleActive]}>
+                      Q{question.questionNumber}
+                    </Text>
+                    <Text style={[s.selectionText, active && s.selectionTitleActive]} numberOfLines={2}>
+                      {question.question.stem}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          );
+        })}
+
+        <TouchableOpacity style={s.secondaryButton} onPress={() => setPhase("attempt")}>
+          <Text style={s.secondaryButtonText}>Back to exam</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={s.primaryButton} onPress={() => void handleSubmit(selectedQuestionIdsBySection)}>
+          <Text style={s.primaryButtonText}>Submit selected questions</Text>
+        </TouchableOpacity>
+      </ScrollView>
+    );
+  }
+
+  if (phase === "review") {
+    const summary = reviewSummary ?? attemptSummary;
+    if (!summary) {
+      return (
+        <View style={s.centered}>
+          <Text style={s.errorText}>Review data is unavailable.</Text>
+        </View>
+      );
+    }
+
+    return (
+      <ScrollView contentContainerStyle={s.screen}>
+        <Text style={s.title}>Paper review</Text>
+        <Text style={s.subtitle}>{formatPaperTitle(summary.paper)}</Text>
+
+        <View style={s.cardGrid}>
+          <View style={s.card}><Text style={s.cardValue}>{summary.attempt.status}</Text><Text style={s.cardLabel}>Attempt</Text></View>
+          <View style={s.card}><Text style={s.cardValue}>{summary.attempt.marking_status}</Text><Text style={s.cardLabel}>Marking</Text></View>
+          <View style={s.card}><Text style={s.cardValue}>{summary.attempt.final_score ?? summary.attempt.objective_score ?? "-"}</Text><Text style={s.cardLabel}>Score</Text></View>
+          <View style={s.card}><Text style={s.cardValue}>{summary.attempt.max_score ?? "-"}</Text><Text style={s.cardLabel}>Maximum</Text></View>
+        </View>
+
+        {!summary.revealSolutions ? (
+          <View style={s.infoCard}>
+            <Text style={s.infoText}>Worked solutions stay hidden until the paper rules allow review.</Text>
+          </View>
+        ) : null}
+
+        {summary.sections.map((section) => (
+          <View key={section.id} style={s.sectionCard}>
+            <View style={s.rowBetween}>
+              <Text style={s.sectionCode}>{section.sectionCode}</Text>
+              <Text style={s.ruleText}>{buildSectionRule(section)}</Text>
+            </View>
+            <Text style={s.sectionTitle}>{section.title ?? `Section ${section.sectionCode}`}</Text>
+            <Text style={s.infoText}>
+              Answered {section.answeredCount}/{section.questionCount} / Pending manual {section.pendingManualCount} / Score {section.score}/{section.maxScore}
+            </Text>
+
+            {section.questions.map((question) => (
+              <View key={question.id} style={s.questionReviewCard}>
+                <View style={s.rowBetween}>
+                  <Text style={s.selectionTitle}>Q{question.questionNumber}</Text>
+                  <Text style={s.metaText}>
+                    {question.pendingManual ? "Pending manual" : question.answered ? `Scored ${question.score ?? 0}/${question.maxScore}` : "Not answered"}
+                  </Text>
+                </View>
+                <MathText text={question.question.stem} fontSize={14} color="#334155" />
+                {summary.revealSolutions && question.question.expectedAnswer ? (
+                  <Text style={s.infoText}>Expected answer: {question.question.expectedAnswer}</Text>
+                ) : null}
+                {summary.revealSolutions && question.question.explanation ? (
+                  <Text style={s.infoText}>{question.question.explanation}</Text>
+                ) : null}
+              </View>
+            ))}
+          </View>
+        ))}
+
+        <TouchableOpacity style={s.primaryButton} onPress={() => navigation.goBack()}>
+          <Text style={s.primaryButtonText}>Back to papers</Text>
+        </TouchableOpacity>
+      </ScrollView>
+    );
+  }
+
+  if (!attemptSummary || !currentQuestion || !currentQuestionId || !currentQuestionSummary) {
+    return (
+      <View style={s.centered}>
+        <ActivityIndicator size="large" />
+      </View>
+    );
+  }
+
+  const answeredCount = questionList.filter((entry) => {
+    const localDraft = draftsByQuestionId[entry.question.id];
+    return localDraft ? hasDraftValue(localDraft) : entry.question.answered;
+  }).length;
+  const previousQuestionId = currentIndex > 0 ? questionList[currentIndex - 1]?.question.id : null;
+  const nextQuestionId =
+    currentIndex >= 0 && currentIndex < questionList.length - 1
+      ? questionList[currentIndex + 1]?.question.id
+      : null;
+
+  return (
+    <View style={s.attemptRoot}>
+      <View style={s.attemptHeader}>
+        <View>
+          <Text style={s.selectionTitle}>{currentIndex + 1} / {questionList.length}</Text>
+          <Text style={s.metaText}>{answeredCount} answered</Text>
+        </View>
+        <Text style={[s.timerText, { color: timerColor(remainingSeconds) }]}>{formatTime(remainingSeconds ?? 0)}</Text>
+      </View>
+
+      {questionLoading ? <ActivityIndicator style={{ marginTop: 8 }} size="small" /> : null}
+
+      <ScrollView contentContainerStyle={s.screen}>
+        <View style={s.sectionCard}>
+          <View style={s.rowBetween}>
+            <Text style={s.sectionCode}>{currentSection?.section_code ?? currentQuestionSummary.section.sectionCode}</Text>
+            <Text style={s.ruleText}>{buildSectionRule(currentSection ?? currentQuestionSummary.section)}</Text>
+          </View>
+          <Text style={s.metaText}>Question {currentQuestion.questionNumber} / {currentQuestion.marks} marks</Text>
+        </View>
+
+        <MathText text={currentQuestion.stem} fontSize={18} color="#0f172a" />
+        {currentSection?.instructions ? (
+          <View style={s.infoCard}>
+            <Text style={s.infoText}>{currentSection.instructions}</Text>
+          </View>
+        ) : null}
+
+        {renderQuestionInput(currentQuestion)}
+        {error ? <Text style={s.errorText}>{error}</Text> : null}
       </ScrollView>
 
-      {/* Navigation bar */}
-      <View style={s.navBar}>
+      <View style={s.footer}>
         <TouchableOpacity
-          style={[s.navBtn, index === 0 && s.navBtnDisabled]}
-          onPress={() => setIndex((i) => i - 1)}
-          disabled={index === 0}
+          style={[s.secondaryButton, !previousQuestionId && s.disabled]}
+          disabled={!previousQuestionId || saving || submitting}
+          onPress={() => previousQuestionId && void navigateToQuestion(previousQuestionId)}
         >
-          <Text style={s.navBtnText}>← Prev</Text>
+          <Text style={s.secondaryButtonText}>Prev</Text>
         </TouchableOpacity>
 
-        {/* Question grid */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.navGrid}>
-          {questions.map((_, i) => {
-            const isAnswered = answers[questions[i].order_index] !== undefined;
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.dotScroller}>
+          {questionList.map((entry, index) => {
+            const localDraft = draftsByQuestionId[entry.question.id];
+            const answered = localDraft ? hasDraftValue(localDraft) : entry.question.answered;
+            const active = entry.question.id === currentQuestionId;
             return (
               <TouchableOpacity
-                key={i}
-                style={[
-                  s.gridDot,
-                  i === index && s.gridDotCurrent,
-                  isAnswered && i !== index && s.gridDotAnswered,
-                ]}
-                onPress={() => setIndex(i)}
+                key={entry.question.id}
+                style={[s.dot, active && s.dotActive, answered && !active && s.dotAnswered]}
+                onPress={() => void navigateToQuestion(entry.question.id)}
               >
-                <Text style={[
-                  s.gridDotText,
-                  (i === index || isAnswered) && s.gridDotTextActive,
-                ]}>
-                  {i + 1}
-                </Text>
+                <Text style={[s.dotText, (active || answered) && s.dotTextActive]}>{index + 1}</Text>
               </TouchableOpacity>
             );
           })}
         </ScrollView>
 
-        {index < questions.length - 1 ? (
+        {nextQuestionId ? (
           <TouchableOpacity
-            style={s.navBtn}
-            onPress={() => setIndex((i) => i + 1)}
+            style={s.secondaryButton}
+            disabled={saving || submitting}
+            onPress={() => nextQuestionId && void navigateToQuestion(nextQuestionId)}
           >
-            <Text style={s.navBtnText}>Next →</Text>
+            <Text style={s.secondaryButtonText}>Next</Text>
           </TouchableOpacity>
         ) : (
-          <TouchableOpacity style={s.submitBtn} onPress={handleSubmit}>
-            <Text style={s.submitBtnText}>Submit</Text>
+          <TouchableOpacity style={s.primaryButtonSmall} disabled={saving || submitting} onPress={() => void handleSubmit()}>
+            <Text style={s.primaryButtonText}>{submitting ? "Submitting..." : "Submit"}</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -354,183 +836,288 @@ export default function PaperDrillScreen({ route, navigation }: Props) {
 }
 
 const s = StyleSheet.create({
-  center: { flex: 1, alignItems: "center", justifyContent: "center" },
-  err:    { color: "red" },
-
-  // ── Intro ──────────────────────────────────────────────────────
-  introContainer: { padding: 24, gap: 20, flexGrow: 1, justifyContent: "center" },
-  introSubject: { fontSize: 13, fontWeight: "600", color: "#888", textTransform: "uppercase", letterSpacing: 1 },
-  introTitle:   { fontSize: 28, fontWeight: "800", color: "#111", marginTop: 4 },
-  introMeta:    { fontSize: 14, color: "#666" },
-  infoGrid: {
+  centered: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 24,
+    gap: 12,
+  },
+  screen: {
+    padding: 18,
+    gap: 16,
+  },
+  kicker: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#64748b",
+    textTransform: "uppercase",
+    letterSpacing: 1,
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: "800",
+    color: "#0f172a",
+  },
+  subtitle: {
+    fontSize: 14,
+    color: "#64748b",
+  },
+  cardGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 12,
-    marginTop: 4,
   },
-  infoCell: {
+  card: {
     flex: 1,
-    minWidth: "40%",
-    backgroundColor: "#f4f4f5",
-    borderRadius: 12,
-    padding: 14,
-    gap: 2,
-  },
-  infoCellValue: { fontSize: 18, fontWeight: "700", color: "#111" },
-  infoCellLabel: { fontSize: 12, color: "#888" },
-  instructions: {
-    backgroundColor: "#f0f9ff",
-    borderRadius: 12,
+    minWidth: "45%",
+    backgroundColor: "#ffffff",
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: "#bae6fd",
-    padding: 16,
+    borderColor: "#e2e8f0",
+    padding: 14,
+    gap: 4,
+  },
+  cardValue: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: "#0f172a",
+  },
+  cardLabel: {
+    fontSize: 12,
+    color: "#64748b",
+  },
+  infoCard: {
+    backgroundColor: "#eff6ff",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#bfdbfe",
+    padding: 14,
+  },
+  infoText: {
+    fontSize: 14,
+    color: "#475569",
+    lineHeight: 20,
+  },
+  sectionCard: {
+    backgroundColor: "#ffffff",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    padding: 14,
     gap: 8,
   },
-  instructionsTitle: { fontSize: 14, fontWeight: "700", color: "#0369a1" },
-  instructionsText:  { fontSize: 13, color: "#0c4a6e", lineHeight: 22 },
-  noQuestions: { fontSize: 13, color: "#999", textAlign: "center", lineHeight: 20 },
-  beginBtn: {
-    backgroundColor: "#111",
-    borderRadius: 14,
-    padding: 18,
-    alignItems: "center",
-  },
-  beginBtnText: { color: "#fff", fontWeight: "700", fontSize: 17 },
-
-  // ── Drill ──────────────────────────────────────────────────────
-  drillRoot: { flex: 1, backgroundColor: "#fff" },
-  drillHeader: {
+  rowBetween: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderColor: "#f0f0f0",
-    backgroundColor: "#fff",
+    gap: 12,
   },
-  drillCounter:  { fontSize: 14, fontWeight: "600", color: "#555" },
-  drillAnswered: { fontSize: 14, color: "#16a34a" },
-  drillTimer:    { fontSize: 18, fontWeight: "700", fontVariant: ["tabular-nums"] },
-  drillBody:     { padding: 20, gap: 16 },
-  sectionBanner: {
-    backgroundColor: "#f4f4f5",
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    alignSelf: "flex-start",
+  sectionCode: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#0f172a",
+    textTransform: "uppercase",
   },
-  sectionBannerText: { fontSize: 12, fontWeight: "700", color: "#666", textTransform: "uppercase", letterSpacing: 0.5 },
-  marks: { fontSize: 12, color: "#888", fontStyle: "italic" },
-  options: { gap: 10, marginTop: 4 },
-  option: {
-    flexDirection: "row",
-    gap: 10,
-    borderWidth: 1,
-    borderColor: "#e4e4e7",
-    borderRadius: 12,
-    padding: 14,
-    backgroundColor: "#fafafa",
-    alignItems: "flex-start",
+  ruleText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#1d4ed8",
   },
-  optionSelected: {
-    borderColor: "#111",
-    borderWidth: 2,
-    backgroundColor: "#f4f4f5",
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#0f172a",
   },
-  optionKey: { fontSize: 15, fontWeight: "700", color: "#aaa", minWidth: 20 },
-  optionKeySelected: { color: "#111" },
-
-  // ── Nav bar ────────────────────────────────────────────────────
-  navBar: {
-    flexDirection: "row",
+  primaryButton: {
+    backgroundColor: "#0f172a",
+    borderRadius: 14,
+    paddingVertical: 16,
     alignItems: "center",
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderTopWidth: 1,
-    borderColor: "#f0f0f0",
-    backgroundColor: "#fff",
+  },
+  primaryButtonSmall: {
+    backgroundColor: "#0f172a",
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  primaryButtonText: {
+    color: "#ffffff",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  secondaryButton: {
+    borderWidth: 1,
+    borderColor: "#cbd5e1",
+    borderRadius: 12,
+    backgroundColor: "#ffffff",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  secondaryButtonText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#0f172a",
+  },
+  errorText: {
+    fontSize: 14,
+    color: "#b91c1c",
+  },
+  optionList: {
+    gap: 10,
+  },
+  optionCard: {
+    flexDirection: "row",
+    gap: 12,
+    alignItems: "flex-start",
+    backgroundColor: "#ffffff",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#cbd5e1",
+    padding: 14,
+  },
+  optionCardSelected: {
+    borderWidth: 2,
+    borderColor: "#0f172a",
+  },
+  optionKey: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: "#94a3b8",
+    minWidth: 20,
+  },
+  optionKeySelected: {
+    color: "#0f172a",
+  },
+  textInput: {
+    borderWidth: 1,
+    borderColor: "#cbd5e1",
+    borderRadius: 14,
+    backgroundColor: "#ffffff",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 15,
+    color: "#0f172a",
+  },
+  multilineInput: {
+    minHeight: 140,
+  },
+  essayInput: {
+    minHeight: 220,
+  },
+  partsList: {
+    gap: 12,
+  },
+  partCard: {
+    backgroundColor: "#ffffff",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#cbd5e1",
+    padding: 14,
+    gap: 10,
+  },
+  partLabel: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#0f172a",
+  },
+  metaText: {
+    fontSize: 12,
+    color: "#64748b",
+  },
+  selectionOption: {
+    borderWidth: 1,
+    borderColor: "#cbd5e1",
+    borderRadius: 12,
+    padding: 12,
+    gap: 4,
+    backgroundColor: "#ffffff",
+  },
+  selectionOptionActive: {
+    backgroundColor: "#0f172a",
+    borderColor: "#0f172a",
+  },
+  selectionTitle: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#0f172a",
+  },
+  selectionTitleActive: {
+    color: "#ffffff",
+  },
+  selectionText: {
+    fontSize: 13,
+    color: "#475569",
+  },
+  questionReviewCard: {
+    backgroundColor: "#f8fafc",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    padding: 12,
     gap: 8,
   },
-  navBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#e4e4e7",
+  attemptRoot: {
+    flex: 1,
+    backgroundColor: "#f8fafc",
   },
-  navBtnDisabled: { opacity: 0.3 },
-  navBtnText: { fontSize: 13, fontWeight: "600", color: "#333" },
-  navGrid: { flex: 1 },
-  gridDot: {
-    width: 30,
-    height: 30,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#e4e4e7",
+  attemptHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    backgroundColor: "#ffffff",
+    borderBottomWidth: 1,
+    borderBottomColor: "#e2e8f0",
+  },
+  timerText: {
+    fontSize: 20,
+    fontWeight: "800",
+  },
+  footer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    backgroundColor: "#ffffff",
+    borderTopWidth: 1,
+    borderTopColor: "#e2e8f0",
+  },
+  dotScroller: {
+    flex: 1,
+  },
+  dot: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 4,
-    backgroundColor: "#fafafa",
-  },
-  gridDotCurrent: { borderColor: "#111", borderWidth: 2, backgroundColor: "#111" },
-  gridDotAnswered: { backgroundColor: "#dcfce7", borderColor: "#16a34a" },
-  gridDotText: { fontSize: 10, color: "#aaa", fontWeight: "600" },
-  gridDotTextActive: { color: "#fff" },
-  submitBtn: {
-    backgroundColor: "#111",
-    borderRadius: 10,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-  },
-  submitBtnText: { color: "#fff", fontSize: 13, fontWeight: "700" },
-
-  // ── Review ─────────────────────────────────────────────────────
-  reviewContainer: { padding: 20, gap: 20 },
-  reviewTitle: { fontSize: 26, fontWeight: "800", color: "#111" },
-  reviewSub:   { fontSize: 14, color: "#777", marginTop: -12 },
-  scoreSummary: {
-    flexDirection: "row",
     borderWidth: 1,
-    borderColor: "#e4e4e7",
-    borderRadius: 16,
-    overflow: "hidden",
+    borderColor: "#cbd5e1",
+    backgroundColor: "#ffffff",
+    marginRight: 6,
   },
-  scoreCell:    { flex: 1, padding: 16, alignItems: "center", gap: 4, backgroundColor: "#fafafa" },
-  scoreCellMid: { borderLeftWidth: 1, borderRightWidth: 1, borderColor: "#e4e4e7" },
-  scoreCellValue: { fontSize: 28, fontWeight: "800", color: "#111" },
-  scoreCellLabel: { fontSize: 12, color: "#888" },
-  reviewNote: {
-    fontSize: 13,
-    color: "#78350f",
-    backgroundColor: "#fffbeb",
-    borderRadius: 10,
-    padding: 12,
-    lineHeight: 20,
+  dotActive: {
+    backgroundColor: "#0f172a",
+    borderColor: "#0f172a",
   },
-  reviewSection:       { gap: 12 },
-  reviewSectionHeader: { fontSize: 13, fontWeight: "700", color: "#888", textTransform: "uppercase", letterSpacing: 0.5 },
-  reviewRow: {
-    borderWidth: 1,
-    borderColor: "#f0f0f0",
-    borderRadius: 12,
-    padding: 14,
-    gap: 8,
-    backgroundColor: "#fff",
+  dotAnswered: {
+    backgroundColor: "#dcfce7",
+    borderColor: "#16a34a",
   },
-  reviewRowHeader:    { flexDirection: "row", alignItems: "center", gap: 8 },
-  reviewQNum:         { fontSize: 12, fontWeight: "700", color: "#aaa" },
-  reviewBadge:        { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
-  reviewBadgeAnswered:{ backgroundColor: "#dcfce7" },
-  reviewBadgeSkipped: { backgroundColor: "#fee2e2" },
-  reviewBadgeText:    { fontSize: 11, fontWeight: "600", color: "#444" },
-  reviewExplanation:  { fontSize: 12, color: "#777", fontStyle: "italic", lineHeight: 18 },
-  doneBtn: {
-    backgroundColor: "#111",
-    borderRadius: 12,
-    padding: 16,
-    alignItems: "center",
-    marginTop: 8,
+  dotText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#64748b",
   },
-  doneBtnText: { color: "#fff", fontWeight: "700", fontSize: 15 },
+  dotTextActive: {
+    color: "#ffffff",
+  },
+  disabled: {
+    opacity: 0.4,
+  },
 });

@@ -12,6 +12,10 @@ import {
   normalizeInteger,
   normalizeOptionalText,
   normalizeOrderIndex,
+  normalizePaperMarkingMode,
+  normalizePaperQuestionMode,
+  normalizePaperSolutionUnlockMode,
+  normalizePaperStatus,
   normalizePaperType,
   normalizeSourceType,
 } from "../lib/adminContent.js";
@@ -28,12 +32,23 @@ type ExamPaperListRow = {
   year: number | null;
   paper_number: number | null;
   term: string | null;
+  session: string | null;
+  paper_code: string | null;
   duration_min: number | null;
+  total_marks: number | null;
+  instructions: string | null;
+  has_sections: boolean;
+  marking_mode: string;
+  solution_unlock_mode: string;
+  question_mode: string;
+  status: string;
   is_sample: boolean;
   created_at: string;
+  updated_at: string | null;
   subjects: { name: string | null; code: string | null } | null;
   schools: { name: string | null } | null;
   paper_questions: { id: string }[] | null;
+  paper_sections: { id: string }[] | null;
 };
 
 type SchoolRow = {
@@ -48,6 +63,8 @@ type PaperQuestionRow = {
   question_id: string;
   order_index: number;
   section: string | null;
+  section_id: string | null;
+  question_number: number | null;
   questions: {
     id: string;
     stem: string;
@@ -60,6 +77,20 @@ type PaperQuestionRow = {
   } | null;
 };
 
+async function ensurePaperHasNoAttempts(paperId: string): Promise<string | null> {
+  const { count, error } = await supabaseAdmin
+    .from("paper_attempts")
+    .select("id", { count: "exact", head: true })
+    .eq("exam_paper_id", paperId);
+
+  if (error) return error.message;
+  if ((count ?? 0) > 0) {
+    return "This paper already has attempts and cannot be structurally modified or deleted";
+  }
+
+  return null;
+}
+
 export async function adminResourceRoutes(app: FastifyInstance) {
   app.get<{ Querystring: { exam_path?: string; subject_id?: string } }>("/admin/exam-papers", async (request, reply) => {
     const admin = await requireAnyAdmin(request, reply);
@@ -70,7 +101,7 @@ export async function adminResourceRoutes(app: FastifyInstance) {
     let query = supabaseAdmin
       .from("exam_papers")
       .select(
-        "id, exam_path, subject_id, school_id, source_type, paper_type, exam_mode, title, year, paper_number, term, duration_min, is_sample, created_at, subjects(name, code), schools(name), paper_questions(id)"
+        "id, exam_path, subject_id, school_id, source_type, paper_type, exam_mode, title, year, paper_number, term, session, paper_code, duration_min, total_marks, instructions, has_sections, marking_mode, solution_unlock_mode, question_mode, status, is_sample, created_at, updated_at, subjects(name, code), schools(name), paper_questions(id), paper_sections(id)"
       )
       .order("year", { ascending: false })
       .order("paper_number", { ascending: true });
@@ -84,6 +115,7 @@ export async function adminResourceRoutes(app: FastifyInstance) {
     return ((data as unknown as ExamPaperListRow[] | null) ?? []).map((paper) => ({
       ...paper,
       question_count: paper.paper_questions?.length ?? 0,
+      section_count: paper.paper_sections?.length ?? 0,
     }));
   });
 
@@ -98,7 +130,16 @@ export async function adminResourceRoutes(app: FastifyInstance) {
       year?: number | null;
       paper_number?: number | null;
       term?: string;
+      session?: string;
+      paper_code?: string;
       duration_min?: number | null;
+      total_marks?: number | null;
+      instructions?: string;
+      has_sections?: boolean;
+      marking_mode?: string;
+      solution_unlock_mode?: string;
+      question_mode?: string;
+      status?: string;
       is_sample?: boolean;
       exam_path?: string;
     };
@@ -117,6 +158,11 @@ export async function adminResourceRoutes(app: FastifyInstance) {
     const sourceType = normalizeSourceType(request.body.source_type) ?? "maneb";
     const paperType = normalizePaperType(request.body.paper_type) ?? "maneb_past_paper";
     const examMode = normalizeExamMode(request.body.exam_mode) ?? "paper_layout";
+    const markingMode = normalizePaperMarkingMode(request.body.marking_mode) ?? "auto";
+    const solutionUnlockMode =
+      normalizePaperSolutionUnlockMode(request.body.solution_unlock_mode) ?? "after_submit";
+    const questionMode = normalizePaperQuestionMode(request.body.question_mode) ?? "one_question_at_a_time";
+    const status = normalizePaperStatus(request.body.status) ?? "published";
     const schoolId = request.body.school_id ?? null;
 
     if (sourceType === "school") {
@@ -137,7 +183,16 @@ export async function adminResourceRoutes(app: FastifyInstance) {
         year: normalizeInteger(request.body.year),
         paper_number: normalizeInteger(request.body.paper_number),
         term: normalizeOptionalText(request.body.term),
+        session: normalizeOptionalText(request.body.session),
+        paper_code: normalizeOptionalText(request.body.paper_code),
         duration_min: normalizeInteger(request.body.duration_min),
+        total_marks: normalizeInteger(request.body.total_marks),
+        instructions: normalizeOptionalText(request.body.instructions),
+        has_sections: request.body.has_sections ?? false,
+        marking_mode: markingMode,
+        solution_unlock_mode: solutionUnlockMode,
+        question_mode: questionMode,
+        status,
         is_sample: request.body.is_sample ?? false,
         exam_path: subjectResult.data.exam_path,
       })
@@ -160,7 +215,16 @@ export async function adminResourceRoutes(app: FastifyInstance) {
       year?: number | null;
       paper_number?: number | null;
       term?: string;
+      session?: string;
+      paper_code?: string;
       duration_min?: number | null;
+      total_marks?: number | null;
+      instructions?: string;
+      has_sections?: boolean;
+      marking_mode?: string;
+      solution_unlock_mode?: string;
+      question_mode?: string;
+      status?: string;
       is_sample?: boolean;
       exam_path?: string;
     };
@@ -186,8 +250,24 @@ export async function adminResourceRoutes(app: FastifyInstance) {
     const sourceType = request.body.source_type ? normalizeSourceType(request.body.source_type) : paperResult.data.source_type;
     const paperType = request.body.paper_type ? normalizePaperType(request.body.paper_type) : paperResult.data.paper_type;
     const examMode = request.body.exam_mode ? normalizeExamMode(request.body.exam_mode) : paperResult.data.exam_mode;
-    if (!sourceType || !paperType || !examMode) {
-      return reply.status(400).send({ error: "Invalid exam paper source_type, paper_type, or exam_mode" });
+    const markingMode =
+      request.body.marking_mode !== undefined
+        ? normalizePaperMarkingMode(request.body.marking_mode)
+        : paperResult.data.marking_mode;
+    const solutionUnlockMode =
+      request.body.solution_unlock_mode !== undefined
+        ? normalizePaperSolutionUnlockMode(request.body.solution_unlock_mode)
+        : paperResult.data.solution_unlock_mode;
+    const questionMode =
+      request.body.question_mode !== undefined
+        ? normalizePaperQuestionMode(request.body.question_mode)
+        : paperResult.data.question_mode;
+    const status =
+      request.body.status !== undefined
+        ? normalizePaperStatus(request.body.status)
+        : paperResult.data.status;
+    if (!sourceType || !paperType || !examMode || !markingMode || !solutionUnlockMode || !questionMode || !status) {
+      return reply.status(400).send({ error: "Invalid exam paper metadata supplied" });
     }
 
     const schoolId = request.body.school_id !== undefined ? request.body.school_id : paperResult.data.school_id;
@@ -209,7 +289,16 @@ export async function adminResourceRoutes(app: FastifyInstance) {
         year: request.body.year !== undefined ? normalizeInteger(request.body.year) : undefined,
         paper_number: request.body.paper_number !== undefined ? normalizeInteger(request.body.paper_number) : undefined,
         term: request.body.term !== undefined ? normalizeOptionalText(request.body.term) : undefined,
+        session: request.body.session !== undefined ? normalizeOptionalText(request.body.session) : undefined,
+        paper_code: request.body.paper_code !== undefined ? normalizeOptionalText(request.body.paper_code) : undefined,
         duration_min: request.body.duration_min !== undefined ? normalizeInteger(request.body.duration_min) : undefined,
+        total_marks: request.body.total_marks !== undefined ? normalizeInteger(request.body.total_marks) : undefined,
+        instructions: request.body.instructions !== undefined ? normalizeOptionalText(request.body.instructions) : undefined,
+        has_sections: request.body.has_sections,
+        marking_mode: markingMode,
+        solution_unlock_mode: solutionUnlockMode,
+        question_mode: questionMode,
+        status,
         is_sample: request.body.is_sample,
         exam_path: subjectResult.data.exam_path,
       })
@@ -224,6 +313,9 @@ export async function adminResourceRoutes(app: FastifyInstance) {
   app.delete<{ Params: { id: string } }>("/admin/exam-papers/:id", async (request, reply) => {
     const admin = await requireSuperAdmin(request, reply);
     if (!admin) return;
+
+    const attemptsError = await ensurePaperHasNoAttempts(request.params.id);
+    if (attemptsError) return reply.status(400).send({ error: attemptsError });
 
     const { error } = await supabaseAdmin.from("exam_papers").delete().eq("id", request.params.id);
     if (error) return reply.status(400).send({ error: error.message });
@@ -297,7 +389,7 @@ export async function adminResourceRoutes(app: FastifyInstance) {
 
     const { data, error } = await supabaseAdmin
       .from("paper_questions")
-      .select("id, exam_paper_id, question_id, order_index, section, questions(id, stem, type, difficulty, marks, question_no, exam_path, topic_id)")
+      .select("id, exam_paper_id, question_id, order_index, section, section_id, question_number, questions(id, stem, type, difficulty, marks, question_no, exam_path, topic_id)")
       .eq("exam_paper_id", request.params.paperId)
       .order("order_index");
 
@@ -307,10 +399,13 @@ export async function adminResourceRoutes(app: FastifyInstance) {
 
   app.post<{
     Params: { paperId: string };
-    Body: { question_id: string; order_index?: number; section?: string };
+    Body: { question_id: string; order_index?: number; section?: string; section_id?: string | null; question_number?: number | null };
   }>("/admin/exam-papers/:paperId/questions", async (request, reply) => {
     const admin = await requireSuperAdmin(request, reply);
     if (!admin) return;
+
+    const attemptsError = await ensurePaperHasNoAttempts(request.params.paperId);
+    if (attemptsError) return reply.status(400).send({ error: attemptsError });
 
     const paperResult = await getExamPaper(request.params.paperId);
     if (paperResult.error) return reply.status(500).send({ error: paperResult.error });
@@ -338,26 +433,42 @@ export async function adminResourceRoutes(app: FastifyInstance) {
         question_id: request.body.question_id,
         order_index: normalizeOrderIndex(request.body.order_index),
         section: normalizeOptionalText(request.body.section),
+        section_id: request.body.section_id ?? null,
+        question_number: normalizeInteger(request.body.question_number),
       })
-      .select("id, exam_paper_id, question_id, order_index, section, questions(id, stem, type, difficulty, marks, question_no, exam_path, topic_id)")
+      .select("id, exam_paper_id, question_id, order_index, section, section_id, question_number, questions(id, stem, type, difficulty, marks, question_no, exam_path, topic_id)")
       .single();
 
     if (error) return reply.status(400).send({ error: error.message });
     return reply.status(201).send(data);
   });
 
-  app.patch<{ Params: { id: string }; Body: { order_index?: number; section?: string } }>("/admin/paper-questions/:id", async (request, reply) => {
+  app.patch<{ Params: { id: string }; Body: { order_index?: number; section?: string; section_id?: string | null; question_number?: number | null } }>("/admin/paper-questions/:id", async (request, reply) => {
     const admin = await requireSuperAdmin(request, reply);
     if (!admin) return;
+
+    const { data: existingLink, error: existingLinkError } = await supabaseAdmin
+      .from("paper_questions")
+      .select("id, exam_paper_id")
+      .eq("id", request.params.id)
+      .maybeSingle();
+
+    if (existingLinkError) return reply.status(500).send({ error: existingLinkError.message });
+    if (!existingLink) return reply.status(404).send({ error: "Paper-question link not found" });
+
+    const attemptsError = await ensurePaperHasNoAttempts(existingLink.exam_paper_id);
+    if (attemptsError) return reply.status(400).send({ error: attemptsError });
 
     const { data, error } = await supabaseAdmin
       .from("paper_questions")
       .update({
         order_index: request.body.order_index !== undefined ? normalizeOrderIndex(request.body.order_index) : undefined,
         section: request.body.section !== undefined ? normalizeOptionalText(request.body.section) : undefined,
+        section_id: request.body.section_id !== undefined ? request.body.section_id : undefined,
+        question_number: request.body.question_number !== undefined ? normalizeInteger(request.body.question_number) : undefined,
       })
       .eq("id", request.params.id)
-      .select("id, exam_paper_id, question_id, order_index, section, questions(id, stem, type, difficulty, marks, question_no, exam_path, topic_id)")
+      .select("id, exam_paper_id, question_id, order_index, section, section_id, question_number, questions(id, stem, type, difficulty, marks, question_no, exam_path, topic_id)")
       .single();
 
     if (error) return reply.status(400).send({ error: error.message });
@@ -367,6 +478,18 @@ export async function adminResourceRoutes(app: FastifyInstance) {
   app.delete<{ Params: { id: string } }>("/admin/paper-questions/:id", async (request, reply) => {
     const admin = await requireSuperAdmin(request, reply);
     if (!admin) return;
+
+    const { data: existingLink, error: existingLinkError } = await supabaseAdmin
+      .from("paper_questions")
+      .select("id, exam_paper_id")
+      .eq("id", request.params.id)
+      .maybeSingle();
+
+    if (existingLinkError) return reply.status(500).send({ error: existingLinkError.message });
+    if (!existingLink) return reply.status(404).send({ error: "Paper-question link not found" });
+
+    const attemptsError = await ensurePaperHasNoAttempts(existingLink.exam_paper_id);
+    if (attemptsError) return reply.status(400).send({ error: attemptsError });
 
     const { error } = await supabaseAdmin.from("paper_questions").delete().eq("id", request.params.id);
     if (error) return reply.status(400).send({ error: error.message });

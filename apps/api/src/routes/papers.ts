@@ -1,6 +1,13 @@
 import { FastifyInstance } from "fastify";
 import { supabase } from "../lib/supabase.js";
 
+function sanitizeOptions(options: Array<{ key: string; text: string }> | null | undefined) {
+  return (options ?? []).map((option) => ({
+    key: option.key,
+    text: option.text,
+  }));
+}
+
 export async function paperRoutes(app: FastifyInstance) {
   // GET /subjects/:subjectId/papers
   // Returns past papers available for a subject, with question count
@@ -88,7 +95,14 @@ export async function paperRoutes(app: FastifyInstance) {
           section: row.section ?? null,
           section_id: row.section_id ?? null,
           question_number: row.question_number ?? null,
-          question: row.questions,
+          question: {
+            ...row.questions,
+            options: sanitizeOptions(row.questions.options),
+            question_parts: (row.questions.question_parts ?? []).map((part: any) => ({
+              ...part,
+              options: sanitizeOptions(part.options),
+            })),
+          },
         }));
 
       return result;

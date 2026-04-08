@@ -1,0 +1,19 @@
+{
+  "paperCode": "JCE-BIO-YYYY-PN",
+  "title": "Replace with exact paper title",
+  "examPath": "JCE",
+  "subject": "Biology",
+  "sourceDescription": "Replace with the exact source paper reference",
+  "sourceDate": "YYYY-MM-DD",
+  "expectedPreview": {
+    "questionCount": 0,
+    "sectionCount": 0,
+    "partCount": 0,
+    "essayCount": 0,
+    "structuredCount": 0
+  },
+  "notes": [
+    "Create the paired .xlsx workbook only after the exact source paper is supplied.",
+    "Do not treat this template as an official golden sample."
+  ]
+}

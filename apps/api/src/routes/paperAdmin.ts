@@ -24,6 +24,18 @@ async function readWorkbookFile(request: FastifyRequest): Promise<Buffer> {
 }
 
 async function ensurePaperMutable(paperId: string): Promise<void> {
+  const { data: paper, error: paperError } = await supabaseAdmin
+    .from("exam_papers")
+    .select("status")
+    .eq("id", paperId)
+    .maybeSingle();
+
+  if (paperError) throw new Error(paperError.message);
+  if (!paper) throw new Error("Exam paper not found");
+  if (paper.status === "published") {
+    throw new Error("Set the paper to draft before changing its structure");
+  }
+
   const { count, error } = await supabaseAdmin
     .from("paper_attempts")
     .select("id", { count: "exact", head: true })
@@ -46,6 +58,16 @@ async function ensureQuestionMutable(questionId: string): Promise<void> {
   const paperIds = [...new Set((linkedPapers ?? []).map((row) => row.exam_paper_id))];
   if (paperIds.length === 0) return;
 
+  const { data: papers, error: paperError } = await supabaseAdmin
+    .from("exam_papers")
+    .select("id, status")
+    .in("id", paperIds);
+
+  if (paperError) throw new Error(paperError.message);
+  if ((papers ?? []).some((paper) => paper.status === "published")) {
+    throw new Error("Set linked papers to draft before changing question structure");
+  }
+
   const { count, error } = await supabaseAdmin
     .from("paper_attempts")
     .select("id", { count: "exact", head: true })
@@ -59,6 +81,191 @@ async function ensureQuestionMutable(questionId: string): Promise<void> {
 
 function sumCriterionMarks(criteria: Array<{ max_marks?: number | null }>): number {
   return criteria.reduce((sum, criterion) => sum + Number(criterion.max_marks ?? 0), 0);
+}
+
+function logRouteFailure(
+  request: FastifyRequest,
+  stage: string,
+  error: unknown,
+  context: Record<string, unknown> = {}
+) {
+  request.log.error(
+    {
+      stage,
+      ...context,
+      err: error,
+    },
+    `${stage} failed`
+  );
+}
+
+type ReviewValidationContext = {
+  structure: Awaited<ReturnType<typeof loadPaperStructure>>;
+  answers: Array<{
+    id: string;
+    paper_question_id: string;
+    question_part_id: string | null;
+  }>;
+  rubrics: Array<{
+    id: string;
+    title: string;
+    rubric_code: string | null;
+    essay_rubric_criteria: Array<{
+      id: string;
+      criterion_name: string;
+      max_marks: number;
+      mark_bands: Array<{ key: string; value: string }>;
+      order_index: number;
+    }>;
+  }>;
+};
+
+function normalizeReviewScore(value: number | null | undefined): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+async function loadReviewValidationContext(attemptId: string): Promise<ReviewValidationContext> {
+  const [attemptResult, answersResult, rubricsResult] = await Promise.all([
+    supabaseAdmin.from("paper_attempts").select("exam_paper_id").eq("id", attemptId).maybeSingle(),
+    supabaseAdmin
+      .from("attempt_answers")
+      .select("id, paper_question_id, question_part_id")
+      .eq("paper_attempt_id", attemptId),
+    supabaseAdmin
+      .from("essay_rubrics")
+      .select("id, title, rubric_code, essay_rubric_criteria(id, criterion_name, max_marks, mark_bands, order_index)"),
+  ]);
+
+  if (attemptResult.error) throw new Error(attemptResult.error.message);
+  if (!attemptResult.data?.exam_paper_id) throw new Error("Paper attempt not found");
+  if (answersResult.error) throw new Error(answersResult.error.message);
+  if (rubricsResult.error) throw new Error(rubricsResult.error.message);
+
+  const structure = await loadPaperStructure(attemptResult.data.exam_paper_id);
+  return {
+    structure,
+    answers: (answersResult.data ?? []) as ReviewValidationContext["answers"],
+    rubrics: (rubricsResult.data ?? []) as ReviewValidationContext["rubrics"],
+  };
+}
+
+function validateReviewInput(
+  review: {
+    attempt_answer_id: string;
+    paper_question_id?: string | null;
+    marker_mode?: string;
+    status?: string;
+    overall_comment?: string | null;
+    suggested_total?: number | null;
+    final_total?: number | null;
+    criterion_marks?: Array<{
+      criterion_id?: string | null;
+      score?: number | null;
+      suggested_score?: number | null;
+      final_score?: number | null;
+      comment?: string | null;
+    }>;
+  },
+  context: ReviewValidationContext
+) {
+  const answer = context.answers.find((candidate) => candidate.id === review.attempt_answer_id);
+  if (!answer) {
+    throw new Error(`Unknown attempt_answer_id '${review.attempt_answer_id}'`);
+  }
+
+  const paperQuestion = context.structure.questions.find(
+    (candidate) => candidate.id === answer.paper_question_id
+  );
+  if (!paperQuestion) {
+    throw new Error(`Answer ${review.attempt_answer_id} is linked to an unknown paper question`);
+  }
+
+  const part =
+    paperQuestion.questions.question_parts?.find(
+      (candidate) => candidate.id === answer.question_part_id
+    ) ?? null;
+  const targetMaxScore = part?.marks ?? paperQuestion.questions.marks;
+  const rubricId = part?.rubric_id ?? paperQuestion.questions.rubric_id ?? null;
+  const rubric = rubricId
+    ? context.rubrics.find((candidate) => candidate.id === rubricId) ?? null
+    : null;
+  const criterionMarks = review.criterion_marks ?? [];
+
+  if (rubric && rubric.essay_rubric_criteria.length > 0) {
+    const criteriaById = new Map(
+      rubric.essay_rubric_criteria.map((criterion) => [criterion.id, criterion] as const)
+    );
+    const seenCriterionIds = new Set<string>();
+    const normalizedCriterionMarks = criterionMarks.map((criterionMark) => {
+      if (!criterionMark.criterion_id || !criteriaById.has(criterionMark.criterion_id)) {
+        throw new Error(
+          `Answer ${review.attempt_answer_id} includes an invalid rubric criterion reference`
+        );
+      }
+
+      if (seenCriterionIds.has(criterionMark.criterion_id)) {
+        throw new Error(`Answer ${review.attempt_answer_id} repeats rubric criterion scores`);
+      }
+      seenCriterionIds.add(criterionMark.criterion_id);
+
+      const score = normalizeReviewScore(
+        criterionMark.final_score ?? criterionMark.score ?? null
+      );
+      const criterion = criteriaById.get(criterionMark.criterion_id)!;
+      if (score !== null && (score < 0 || score > Number(criterion.max_marks))) {
+        throw new Error(
+          `Answer ${review.attempt_answer_id} exceeds the cap for criterion '${criterion.criterion_name}'`
+        );
+      }
+
+      return {
+        criterion_id: criterionMark.criterion_id,
+        score,
+        suggested_score: normalizeReviewScore(criterionMark.suggested_score),
+        final_score: score,
+        comment: criterionMark.comment ?? null,
+      };
+    });
+
+    const computedTotal = normalizedCriterionMarks.reduce(
+      (sum, criterionMark) => sum + Number(criterionMark.final_score ?? 0),
+      0
+    );
+    if (computedTotal > targetMaxScore) {
+      throw new Error(`Answer ${review.attempt_answer_id} exceeds the question total of ${targetMaxScore}`);
+    }
+
+    return {
+      paperQuestionId: answer.paper_question_id,
+      normalizedCriterionMarks,
+      suggestedTotal: computedTotal,
+      finalTotal: computedTotal,
+    };
+  }
+
+  if (criterionMarks.length > 1 || criterionMarks.some((criterionMark) => criterionMark.criterion_id)) {
+    throw new Error(`Answer ${review.attempt_answer_id} does not support rubric criterion scoring`);
+  }
+
+  const fallbackScore = normalizeReviewScore(
+    criterionMarks[0]?.final_score ?? criterionMarks[0]?.score ?? review.final_total ?? null
+  );
+  if (fallbackScore !== null && (fallbackScore < 0 || fallbackScore > targetMaxScore)) {
+    throw new Error(`Answer ${review.attempt_answer_id} exceeds the question total of ${targetMaxScore}`);
+  }
+
+  return {
+    paperQuestionId: answer.paper_question_id,
+    normalizedCriterionMarks: criterionMarks.map((criterionMark) => ({
+      criterion_id: null,
+      score: normalizeReviewScore(criterionMark.score ?? criterionMark.final_score),
+      suggested_score: normalizeReviewScore(criterionMark.suggested_score),
+      final_score: fallbackScore,
+      comment: criterionMark.comment ?? null,
+    })),
+    suggestedTotal: fallbackScore,
+    finalTotal: fallbackScore,
+  };
 }
 
 export async function paperAdminRoutes(app: FastifyInstance) {
@@ -214,6 +421,7 @@ export async function paperAdminRoutes(app: FastifyInstance) {
       const preview = await buildPaperWorkbookPreview(buffer);
       return preview;
     } catch (error) {
+      logRouteFailure(request, "paper_import_preview", error);
       return reply.status(400).send({ error: error instanceof Error ? error.message : "Workbook preview failed" });
     }
   });
@@ -231,6 +439,7 @@ export async function paperAdminRoutes(app: FastifyInstance) {
         preview,
       };
     } catch (error) {
+      logRouteFailure(request, "paper_import_publish", error);
       return reply.status(400).send({ error: error instanceof Error ? error.message : "Workbook publish failed" });
     }
   });
@@ -242,6 +451,7 @@ export async function paperAdminRoutes(app: FastifyInstance) {
     try {
       return await loadPaperStructure(request.params.paperId);
     } catch (error) {
+      logRouteFailure(request, "paper_structure_load", error, { paperId: request.params.paperId });
       return reply.status(400).send({ error: error instanceof Error ? error.message : "Could not load paper structure" });
     }
   });
@@ -518,10 +728,13 @@ export async function paperAdminRoutes(app: FastifyInstance) {
         exam_papers(id, title, year, paper_number, exam_path, paper_code, subjects(name, code)),
         users(id, full_name, phone)
       `)
-      .neq("status", "in_progress")
       .order("submitted_at", { ascending: false });
 
-    if (request.query.status) query = query.eq("marking_status", request.query.status);
+    if (request.query.status) {
+      query = query.eq("marking_status", request.query.status);
+    } else {
+      query = query.in("marking_status", ["pending_manual", "under_review"]);
+    }
     if (request.query.exam_path) query = query.eq("exam_papers.exam_path", request.query.exam_path);
 
     const { data, error } = await query;
@@ -572,6 +785,7 @@ export async function paperAdminRoutes(app: FastifyInstance) {
         rubrics: rubricsResult.data ?? [],
       };
     } catch (error) {
+      logRouteFailure(request, "marking_detail_load", error, { attemptId: request.params.attemptId });
       return reply.status(400).send({ error: error instanceof Error ? error.message : "Could not load marking detail" });
     }
   });
@@ -600,7 +814,27 @@ export async function paperAdminRoutes(app: FastifyInstance) {
     const admin = await requireAnyAdmin(request, reply);
     if (!admin) return;
 
+    let reviewContext: ReviewValidationContext;
+    try {
+      reviewContext = await loadReviewValidationContext(request.params.attemptId);
+    } catch (error) {
+      logRouteFailure(request, "marking_review_context", error, { attemptId: request.params.attemptId });
+      return reply.status(400).send({ error: error instanceof Error ? error.message : "Could not load marking context" });
+    }
+
     for (const review of request.body.reviews ?? []) {
+      let validatedReview: ReturnType<typeof validateReviewInput>;
+      try {
+        validatedReview = validateReviewInput(review, reviewContext);
+      } catch (error) {
+        logRouteFailure(request, "marking_review_validation", error, {
+          attemptId: request.params.attemptId,
+          attemptAnswerId: review.attempt_answer_id,
+          paperQuestionId: review.paper_question_id ?? null,
+        });
+        return reply.status(400).send({ error: error instanceof Error ? error.message : "Invalid review payload" });
+      }
+
       const { error: deleteMarksError } = await supabaseAdmin
         .from("answer_marks")
         .delete()
@@ -610,9 +844,9 @@ export async function paperAdminRoutes(app: FastifyInstance) {
 
       if (deleteMarksError) return reply.status(400).send({ error: deleteMarksError.message });
 
-      if ((review.criterion_marks ?? []).length > 0) {
+      if (validatedReview.normalizedCriterionMarks.length > 0) {
         const { error: insertMarksError } = await supabaseAdmin.from("answer_marks").insert(
-          (review.criterion_marks ?? []).map((criterionMark) => ({
+          validatedReview.normalizedCriterionMarks.map((criterionMark) => ({
             paper_attempt_id: request.params.attemptId,
             attempt_answer_id: review.attempt_answer_id,
             criterion_id: criterionMark.criterion_id ?? null,
@@ -639,14 +873,14 @@ export async function paperAdminRoutes(app: FastifyInstance) {
 
       const { error: insertReviewError } = await supabaseAdmin.from("essay_marking_reviews").insert({
         paper_attempt_id: request.params.attemptId,
-        paper_question_id: review.paper_question_id ?? null,
+        paper_question_id: validatedReview.paperQuestionId ?? null,
         attempt_answer_id: review.attempt_answer_id,
         reviewer_user_id: admin.userId,
         marker_mode: review.marker_mode ?? "manual",
         status: review.status ?? "draft",
         overall_comment: review.overall_comment ?? null,
-        suggested_total: review.suggested_total ?? null,
-        final_total: review.final_total ?? null,
+        suggested_total: validatedReview.suggestedTotal,
+        final_total: validatedReview.finalTotal,
         finalized_at: review.status === "finalized" ? new Date().toISOString() : null,
         updated_at: new Date().toISOString(),
       });
@@ -658,6 +892,7 @@ export async function paperAdminRoutes(app: FastifyInstance) {
       const attempt = await refreshAttemptScores(request.params.attemptId);
       return { ok: true, attempt };
     } catch (error) {
+      logRouteFailure(request, "marking_review_refresh", error, { attemptId: request.params.attemptId });
       return reply.status(400).send({ error: error instanceof Error ? error.message : "Could not refresh attempt scores" });
     }
   });

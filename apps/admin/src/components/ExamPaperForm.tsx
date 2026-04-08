@@ -71,7 +71,7 @@ const EMPTY_FORM: ExamPaperFormState = {
   marking_mode: "auto",
   solution_unlock_mode: "after_submit",
   question_mode: "one_question_at_a_time",
-  status: "published",
+  status: "draft",
   school_id: "",
   is_sample: false,
 };

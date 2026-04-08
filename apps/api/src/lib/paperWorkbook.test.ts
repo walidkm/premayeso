@@ -82,8 +82,88 @@ function runPaperWorkbookTests() {
       }),
       catalog
     );
-    assert.ok(parsed.issues.some((issue) => issue.field === "total_marks" && issue.message.includes("does not match total question marks")));
+    assert.ok(parsed.issues.some((issue) => issue.field === "total_marks" && issue.message.includes("does not match counted section marks")));
     assert.ok(parsed.issues.some((issue) => issue.field === "max_marks" && issue.message.includes("does not match question marks")));
+  }
+
+  {
+    const parsed = parsePaperWorkbook(
+      workbookBuffer({
+        exam_papers: [{ exam_path: "MSCE", subject_code: "BIO", paper_code: "BIO-2024-P3", title: "Paper", total_marks: 20 }],
+        paper_sections: [
+          {
+            paper_code: "BIO-2024-P3",
+            section_code: "B",
+            title: "Section B",
+            order_index: 1,
+            question_selection_mode: "answer_any_n",
+            required_count: 2,
+            max_marks: 20,
+          },
+        ],
+        questions: [
+          { paper_code: "BIO-2024-P3", section_code: "B", question_number: 1, type: "short_answer", body: "One", marks: 10, topic_code: "CELL" },
+          { paper_code: "BIO-2024-P3", section_code: "B", question_number: 2, type: "short_answer", body: "Two", marks: 10, topic_code: "CELL" },
+          { paper_code: "BIO-2024-P3", section_code: "B", question_number: 3, type: "short_answer", body: "Three", marks: 6, topic_code: "CELL" },
+        ],
+      }),
+      catalog
+    );
+    assert.equal(parsed.issues.some((issue) => issue.level === "error"), false);
+  }
+
+  {
+    const parsed = parsePaperWorkbook(
+      workbookBuffer({
+        exam_papers: [{ exam_path: "MSCE", subject_code: "BIO", paper_code: "BIO-2024-P4", title: "Paper", total_marks: 10 }],
+        paper_sections: [
+          {
+            paper_code: "BIO-2024-P4",
+            section_code: "B",
+            title: "Section B",
+            order_index: 1,
+            question_selection_mode: "answer_any_n",
+            required_count: 2,
+            max_marks: 10,
+          },
+        ],
+        questions: [
+          { paper_code: "BIO-2024-P4", section_code: "B", question_number: 1, type: "short_answer", body: "One", marks: 10, topic_code: "CELL" },
+        ],
+      }),
+      catalog
+    );
+    assert.ok(parsed.issues.some((issue) => issue.field === "required_count" && issue.message.includes("only has 1")));
+  }
+
+  {
+    const parsed = parsePaperWorkbook(
+      workbookBuffer({
+        exam_papers: [{ exam_path: "MSCE", subject_code: "BIO", paper_code: "BIO-2024-P5", title: "Paper", total_marks: 10 }],
+        questions: [
+          { paper_code: "BIO-2024-P5", question_number: 1, type: "structured", body: "Explain.", marks: 10, topic_code: "CELL" },
+        ],
+      }),
+      catalog
+    );
+    assert.ok(parsed.issues.some((issue) => issue.field === "type" && issue.message.includes("Structured question 1")));
+  }
+
+  {
+    const parsed = parsePaperWorkbook(
+      workbookBuffer({
+        exam_papers: [{ exam_path: "MSCE", subject_code: "BIO", paper_code: "BIO-2024-P6", title: "Paper", total_marks: 10 }],
+        questions: [
+          { paper_code: "BIO-2024-P6", question_number: 1, type: "essay", body: "Discuss.", marks: 10, topic_code: "CELL" },
+        ],
+        question_parts: [
+          { paper_code: "BIO-2024-P6", question_number: 1, part_label: "a", body: "Part a", marks: 5 },
+          { paper_code: "BIO-2024-P6", question_number: 1, part_label: "b", body: "Part b", marks: 5 },
+        ],
+      }),
+      catalog
+    );
+    assert.ok(parsed.issues.some((issue) => issue.field === "rubric_code" && issue.message.includes("every part")));
   }
 }
 

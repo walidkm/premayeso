@@ -13,6 +13,8 @@ const QUICK_LINKS = [
   { href: "/lessons", label: "Manage Lessons", description: "Edit lesson content, video support, and preview access." },
   { href: "/exam-papers", label: "Manage Exam Papers", description: "Create past papers and school papers without cross-level mixing." },
   { href: "/paper-links", label: "Manage Paper Links", description: "Attach questions to papers with order and section control." },
+  { href: "/rubrics", label: "Manage Rubrics", description: "Create reusable criterion-based rubrics for essays and structured parts." },
+  { href: "/marking", label: "Marking Queue", description: "Review pending essay and structured submissions before final scores are released." },
   { href: "/schools", label: "Manage Schools", description: "Maintain reusable school records for school papers and admins." },
 ];
 
@@ -87,7 +89,7 @@ export default async function DashboardPage({
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
         <SurfaceCard title="Management Areas" description="Jump straight to the area you need without digging through a single content tree.">
           <div className="grid gap-3 md:grid-cols-2">
-            {QUICK_LINKS.filter((link) => (link.href === "/exam-papers" || link.href === "/paper-links" || link.href === "/schools" ? isSuperAdmin : true)).map((link) => (
+            {QUICK_LINKS.filter((link) => (link.href === "/exam-papers" || link.href === "/paper-links" || link.href === "/rubrics" || link.href === "/marking" || link.href === "/schools" ? isSuperAdmin : true)).map((link) => (
               <Link
                 key={link.href}
                 href={buildAdminHref(link.href, examPath)}

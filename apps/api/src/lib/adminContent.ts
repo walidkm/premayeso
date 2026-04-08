@@ -4,9 +4,12 @@ export const ALL_EXAM_PATHS = ["JCE", "MSCE", "PSLCE"] as const;
 export const PAPER_SOURCE_TYPES = ["maneb", "school", "teacher"] as const;
 export const PAPER_TYPES = ["maneb_past_paper", "school_exam", "question_pool"] as const;
 export const PAPER_EXAM_MODES = ["paper_layout", "randomized", "both"] as const;
+export const PAPER_MARKING_MODES = ["auto", "manual", "hybrid"] as const;
+export const PAPER_SOLUTION_UNLOCK_MODES = ["never", "after_submit", "after_marked", "always"] as const;
+export const PAPER_QUESTION_MODES = ["one_question_at_a_time", "full_paper"] as const;
+export const PAPER_STATUSES = ["draft", "published", "archived"] as const;
 export const LESSON_CONTENT_TYPES = ["text", "video", "mixed"] as const;
 export const LESSON_BLOCK_TYPES = ["text", "video", "pdf"] as const;
-export const LESSON_BLOCK_TYPES = ["text", "video"] as const;
 export const VIDEO_PROVIDERS = ["youtube", "vimeo", "direct", "other"] as const;
 export const LESSON_FILES_BUCKET = "lesson-files";
 
@@ -14,6 +17,10 @@ export type ExamPath = (typeof ALL_EXAM_PATHS)[number];
 export type PaperSourceType = (typeof PAPER_SOURCE_TYPES)[number];
 export type PaperType = (typeof PAPER_TYPES)[number];
 export type PaperExamMode = (typeof PAPER_EXAM_MODES)[number];
+export type PaperMarkingMode = (typeof PAPER_MARKING_MODES)[number];
+export type PaperSolutionUnlockMode = (typeof PAPER_SOLUTION_UNLOCK_MODES)[number];
+export type PaperQuestionMode = (typeof PAPER_QUESTION_MODES)[number];
+export type PaperStatus = (typeof PAPER_STATUSES)[number];
 export type LessonContentType = (typeof LESSON_CONTENT_TYPES)[number];
 export type LessonBlockType = (typeof LESSON_BLOCK_TYPES)[number];
 export type VideoProvider = (typeof VIDEO_PROVIDERS)[number];
@@ -84,9 +91,19 @@ export type ExamPaperRow = {
   year: number | null;
   paper_number: number | null;
   term: string | null;
+  session: string | null;
+  paper_code: string | null;
   duration_min: number | null;
+  total_marks: number | null;
+  instructions: string | null;
+  has_sections: boolean;
+  marking_mode: PaperMarkingMode;
+  solution_unlock_mode: PaperSolutionUnlockMode;
+  question_mode: PaperQuestionMode;
+  status: PaperStatus;
   is_sample: boolean;
   created_at: string;
+  updated_at: string | null;
 };
 
 export type QuestionRow = {
@@ -137,6 +154,22 @@ export function normalizePaperType(value: string | null | undefined): PaperType 
 
 export function normalizeExamMode(value: string | null | undefined): PaperExamMode | null {
   return PAPER_EXAM_MODES.find((candidate) => candidate === value) ?? null;
+}
+
+export function normalizePaperMarkingMode(value: string | null | undefined): PaperMarkingMode | null {
+  return PAPER_MARKING_MODES.find((candidate) => candidate === value) ?? null;
+}
+
+export function normalizePaperSolutionUnlockMode(value: string | null | undefined): PaperSolutionUnlockMode | null {
+  return PAPER_SOLUTION_UNLOCK_MODES.find((candidate) => candidate === value) ?? null;
+}
+
+export function normalizePaperQuestionMode(value: string | null | undefined): PaperQuestionMode | null {
+  return PAPER_QUESTION_MODES.find((candidate) => candidate === value) ?? null;
+}
+
+export function normalizePaperStatus(value: string | null | undefined): PaperStatus | null {
+  return PAPER_STATUSES.find((candidate) => candidate === value) ?? null;
 }
 
 export function normalizeLessonContentType(value: string | null | undefined): LessonContentType | null {
@@ -308,7 +341,6 @@ export async function getLessonBlock(blockId: string): Promise<{ data: LessonBlo
   const { data, error } = await supabaseAdmin
     .from("lesson_blocks")
     .select("id, lesson_id, block_type, title, text_content, video_url, video_provider, file_path, file_name, file_size, order_index, created_at, updated_at")
-    .select("id, lesson_id, block_type, title, text_content, video_url, video_provider, order_index, created_at, updated_at")
     .eq("id", blockId)
     .maybeSingle();
 
@@ -318,7 +350,7 @@ export async function getLessonBlock(blockId: string): Promise<{ data: LessonBlo
 export async function getExamPaper(paperId: string): Promise<{ data: ExamPaperRow | null; error: string | null }> {
   const { data, error } = await supabaseAdmin
     .from("exam_papers")
-    .select("id, exam_path, subject_id, school_id, source_type, paper_type, exam_mode, title, year, paper_number, term, duration_min, is_sample, created_at")
+    .select("id, exam_path, subject_id, school_id, source_type, paper_type, exam_mode, title, year, paper_number, term, session, paper_code, duration_min, total_marks, instructions, has_sections, marking_mode, solution_unlock_mode, question_mode, status, is_sample, created_at, updated_at")
     .eq("id", paperId)
     .maybeSingle();
 

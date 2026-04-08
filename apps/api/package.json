@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "start": "node dist/server.js",
-    "build": "tsc"
+    "build": "tsc",
+    "test": "npm run build && node dist/lib/paperWorkbook.test.js && node dist/lib/paperAttempts.test.js"
   },
   "dependencies": {
     "@fastify/cors": "^11.2.0",

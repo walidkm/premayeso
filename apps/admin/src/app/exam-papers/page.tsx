@@ -21,7 +21,7 @@ export default async function ExamPapersPage({
       .order("order_index"),
     supabase
       .from("exam_papers")
-      .select("id, exam_path, subject_id, school_id, source_type, paper_type, exam_mode, title, year, paper_number, term, duration_min, is_sample, created_at, subjects(name, code), schools(name), paper_questions(id)")
+      .select("id, exam_path, subject_id, school_id, source_type, paper_type, exam_mode, title, year, paper_number, term, session, paper_code, duration_min, total_marks, instructions, has_sections, marking_mode, solution_unlock_mode, question_mode, status, is_sample, created_at, updated_at, subjects(name, code), schools(name), paper_questions(id), paper_sections(id)")
       .eq("exam_path", examPath)
       .order("year", { ascending: false })
       .order("paper_number", { ascending: true }),
@@ -35,6 +35,7 @@ export default async function ExamPapersPage({
   const papers = ((paperData as ExamPaperAdminDto[] | null) ?? []).map((paper) => ({
     ...paper,
     question_count: paper.paper_questions?.length ?? 0,
+    section_count: paper.paper_sections?.length ?? 0,
   }));
   const schools = (schoolData as SchoolAdminDto[] | null) ?? [];
 

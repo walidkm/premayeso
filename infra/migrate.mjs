@@ -9,7 +9,7 @@
  *   DB_USER     - Database user (default: postgres)
  *   DB_PASSWORD - Database password
  */
-import { readFileSync } from "fs";
+import { readdirSync, readFileSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 import pg from "pg";
@@ -26,10 +26,11 @@ const client = new Client({
     ssl: { rejectUnauthorized: false },
 });
 
-const MIGRATIONS = [
-    "supabase/migrations/002_schema_v2.sql",
-    "supabase/migrations/003_seed_jce.sql",
-  ];
+const MIGRATIONS_DIR = resolve(__dir, "supabase/migrations");
+const MIGRATIONS = readdirSync(MIGRATIONS_DIR)
+  .filter((file) => file.endsWith(".sql"))
+  .sort()
+  .map((file) => `supabase/migrations/${file}`);
 
 async function main() {
     if (!process.env.DB_HOST || !process.env.DB_PASSWORD) {

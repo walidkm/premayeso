@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState, type ChangeEvent, type FormEvent } from "react";
-import { getApiUrl, requestJson } from "@/lib/adminApi";
+import { getApiUrl, requestJson, requestMultipartJson } from "@/lib/adminApi";
 import {
   getPersistedLessonBlocks,
   getVideoProviderLabel,
@@ -77,6 +77,17 @@ function formatFileSize(bytes: number | null): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function summarizePdf(fileName: string | null, fileSize: number | null): string {
+  if (!fileName) return "No PDF uploaded yet";
+  return `${fileName}${fileSize ? ` • ${formatFileSize(fileSize)}` : ""}`;
+}
+
+function getBlockSummary(block: LessonBlockAdminDto): string {
+  if (block.block_type === "text") return summarizeText(block.text_content);
+  if (block.block_type === "pdf") return summarizePdf(block.file_name, block.file_size);
+  return summarizeUrl(block.video_url);
+}
+
 const smallButtonClassName = `${secondaryButtonClassName} px-3 py-2 text-xs`;
 const smallDangerButtonClassName = `${dangerButtonClassName} px-3 py-2 text-xs`;
 
@@ -123,7 +134,7 @@ export function LessonBlocksEditor({ token, lesson, onChanged }: Props) {
         }
 
         if (form.mode === "create") {
-          await requestMultipartJson(`/admin/lessons/${lesson.id}/pdf-blocks`, token, "POST", body);
+          await requestMultipartJson(`/admin/lessons/${lesson.id}/blocks/upload-pdf`, token, "POST", body);
         } else if (form.blockId) {
           await requestMultipartJson(`/admin/lesson-blocks/${form.blockId}/pdf`, token, "PATCH", body);
         }
@@ -403,10 +414,6 @@ export function LessonBlocksEditor({ token, lesson, onChanged }: Props) {
                     {block.title ?? (block.block_type === "text" ? "Untitled text section" : block.block_type === "pdf" ? (block.file_name ?? "Untitled PDF") : "Untitled video section")}
                   </p>
                   <p className={`mt-2 text-sm ${form?.blockId === block.id ? "text-zinc-300" : "text-zinc-600"}`}>
-                    {block.block_type === "text" ? summarizeText(block.text_content) : block.block_type === "pdf" ? (block.file_name ?? "PDF file") : summarizeUrl(block.video_url)}
-                    {block.title ?? (block.block_type === "text" ? "Untitled text section" : "Untitled video section")}
-                  </p>
-                  <p className={`mt-2 text-sm ${form?.blockId === block.id ? "text-zinc-300" : "text-zinc-600"}`}>
                     {getBlockSummary(block)}
                   </p>
                 </div>
@@ -428,11 +435,6 @@ export function LessonBlocksEditor({ token, lesson, onChanged }: Props) {
                   >
                     Down
                   </button>
-                  {block.block_type !== "pdf" ? (
-                    <button type="button" onClick={() => startEdit(block)} className={smallButtonClassName}>
-                      Edit
-                    </button>
-                  ) : null}
                   <button type="button" onClick={() => startEdit(block)} className={smallButtonClassName}>
                     Edit
                   </button>

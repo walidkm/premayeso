@@ -7,6 +7,8 @@ import { questionRoutes } from "./routes/questions.js";
 import { adminRoutes } from "./routes/admin.js";
 import { authRoutes } from "./routes/auth.js";
 import { paperRoutes } from "./routes/papers.js";
+import { paperAttemptRoutes } from "./routes/paperAttempts.js";
+import { paperAdminRoutes } from "./routes/paperAdmin.js";
 import { contentRoutes } from "./routes/content.js";
 import { adminResourceRoutes } from "./routes/adminResources.js";
 
@@ -31,6 +33,8 @@ const start = async () => {
     await app.register(adminRoutes);
     await app.register(authRoutes);
     await app.register(paperRoutes);
+    await app.register(paperAttemptRoutes);
+    await app.register(paperAdminRoutes);
     await app.register(contentRoutes);
     await app.register(adminResourceRoutes);
 

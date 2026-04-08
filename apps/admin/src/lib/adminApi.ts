@@ -17,3 +17,23 @@ export async function requestJson<T>(pathname: string, init: RequestInit): Promi
 
   return (await response.json()) as T;
 }
+
+export async function requestMultipartJson<T>(
+  pathname: string,
+  token: string,
+  method: "POST" | "PATCH",
+  body: FormData
+): Promise<T> {
+  const response = await fetch(getApiUrl(pathname), {
+    method,
+    headers: { Authorization: `Bearer ${token}` },
+    body,
+  });
+
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => ({}))) as ApiErrorResponse;
+    throw new Error(payload.error ?? "Request failed");
+  }
+
+  return (await response.json()) as T;
+}

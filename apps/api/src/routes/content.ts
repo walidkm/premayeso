@@ -44,6 +44,11 @@ const LESSON_SELECT = "*";
 const LESSON_BLOCK_SELECT =
   "id, lesson_id, block_type, title, text_content, video_url, video_provider, file_path, file_name, file_size, order_index, created_at, updated_at";
 const LESSON_WITH_BLOCKS_SELECT = `${LESSON_SELECT}, lesson_blocks(${LESSON_BLOCK_SELECT})`;
+
+type LessonBlockDraft = {
+  block_type: "text" | "video" | "pdf";
+  "id, lesson_id, block_type, title, text_content, video_url, video_provider, order_index, created_at, updated_at";
+const LESSON_WITH_BLOCKS_SELECT = `${LESSON_SELECT}, lesson_blocks(${LESSON_BLOCK_SELECT})`;
 const MAX_LESSON_PDF_SIZE_BYTES = 20 * 1024 * 1024;
 
 type LessonBlockDraft = {
@@ -179,6 +184,7 @@ function buildLessonBlockDraft(input: {
   video_provider?: string | null;
 }): { data: LessonBlockDraft | null; error: string | null } {
   const blockType = normalizeLessonBlockType(input.block_type);
+  if (!blockType || blockType === "pdf") {
   if (!blockType) {
     return { data: null, error: "Block type must be text, video, or pdf" };
   }
@@ -727,8 +733,9 @@ export async function contentRoutes(app: FastifyInstance) {
     return reply.status(201).send((await withSignedLessonBlockUrls([data as LessonBlockRow]))[0]);
   });
 
+  // ── PDF upload (multipart, multiple files) ────────────────────
   app.post<{ Params: { lessonId: string } }>(
-    "/admin/lessons/:lessonId/pdf-blocks",
+    "/admin/lessons/:lessonId/blocks/upload-pdf",
     async (request, reply) => {
       const admin = await requireAnyAdmin(request, reply);
       if (!admin) return;
@@ -749,42 +756,67 @@ export async function contentRoutes(app: FastifyInstance) {
         return reply.status(409).send({ error: "Import legacy content before adding structured blocks" });
       }
 
-      const uploadResult = await parsePdfUpload(request, true);
-      if (uploadResult.error || !uploadResult.file) {
-        return reply.status(400).send({ error: uploadResult.error ?? "Invalid PDF upload payload" });
+      let nextOrderIndex = getNextLessonBlockOrderIndex(existingBlocks);
+      const createdBlocks: LessonBlockRow[] = [];
+      const errors: string[] = [];
+
+      const parts = request.parts();
+      for await (const part of parts) {
+        if (part.type !== "file") continue;
+        if (part.mimetype !== "application/pdf") {
+          errors.push(`${part.filename}: not a PDF file`);
+          await part.toBuffer(); // drain
+          continue;
+        }
+
+        const buffer = await part.toBuffer();
+        const fileId = crypto.randomUUID();
+        const storagePath = `lessons/${request.params.lessonId}/${fileId}.pdf`;
+
+        const { error: uploadError } = await supabaseAdmin.storage
+          .from("lesson-files")
+          .upload(storagePath, buffer, {
+            contentType: "application/pdf",
+            upsert: false,
+          });
+
+        if (uploadError) {
+          errors.push(`${part.filename}: upload failed — ${uploadError.message}`);
+          continue;
+        }
+
+        const { data: blockData, error: blockError } = await supabaseAdmin
+          .from("lesson_blocks")
+          .insert({
+            lesson_id: request.params.lessonId,
+            block_type: "pdf",
+            title: part.filename?.replace(/\.pdf$/i, "") ?? null,
+            text_content: null,
+            video_url: null,
+            video_provider: null,
+            file_path: storagePath,
+            file_name: part.filename ?? `${fileId}.pdf`,
+            file_size: buffer.length,
+            order_index: nextOrderIndex,
+          })
+          .select(LESSON_BLOCK_SELECT)
+          .single();
+
+        if (blockError) {
+          errors.push(`${part.filename}: block save failed — ${blockError.message}`);
+          await supabaseAdmin.storage.from("lesson-files").remove([storagePath]);
+          continue;
+        }
+
+        createdBlocks.push(blockData as LessonBlockRow);
+        nextOrderIndex++;
       }
 
-      const storagePath = buildLessonPdfStoragePath(request.params.lessonId, uploadResult.file.filename);
-      const { error: uploadError } = await supabaseAdmin.storage.from(LESSON_FILES_BUCKET).upload(storagePath, uploadResult.file.buffer, {
-        contentType: "application/pdf",
-        upsert: false,
-      });
-
-      if (uploadError) return reply.status(400).send({ error: uploadError.message });
-
-      const { data, error } = await supabaseAdmin
-        .from("lesson_blocks")
-        .insert({
-          lesson_id: request.params.lessonId,
-          block_type: "pdf",
-          title: uploadResult.title,
-          text_content: null,
-          video_url: null,
-          video_provider: null,
-          file_path: storagePath,
-          file_name: uploadResult.file.filename,
-          file_size: uploadResult.file.size,
-          order_index: getNextLessonBlockOrderIndex(existingBlocks),
-        })
-        .select(LESSON_BLOCK_SELECT)
-        .single();
-
-      if (error) {
-        await removeLessonFiles([storagePath]);
-        return reply.status(400).send({ error: error.message });
+      if (createdBlocks.length === 0 && errors.length > 0) {
+        return reply.status(400).send({ error: errors.join("; ") });
       }
 
-      return reply.status(201).send((await withSignedLessonBlockUrls([data as LessonBlockRow]))[0]);
+      return reply.status(201).send({ created: createdBlocks, errors });
     }
   );
 
@@ -905,6 +937,11 @@ export async function contentRoutes(app: FastifyInstance) {
       if (blockResult.error) return reply.status(500).send({ error: blockResult.error });
       if (!blockResult.data) return reply.status(404).send({ error: "Lesson block not found" });
 
+      // Clean up Storage file for PDF blocks
+      if (blockResult.data.block_type === "pdf" && blockResult.data.file_path) {
+        await supabaseAdmin.storage.from("lesson-files").remove([blockResult.data.file_path]);
+      }
+
       const { error } = await supabaseAdmin
         .from("lesson_blocks")
         .delete()
@@ -952,11 +989,25 @@ export async function contentRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: "Reorder payload contains blocks outside this lesson" });
     }
 
-    const reorderResults = await Promise.all(
-      requestedIds.map((id, index) =>
-        supabaseAdmin.from("lesson_blocks").update({ order_index: index }).eq("id", id).eq("lesson_id", request.params.lessonId)
-      )
-    );
+    const timestamp = new Date().toISOString();
+    const reorderPayload = requestedIds.map((id, index) => {
+      const block = blockById.get(id)!;
+      return {
+        id: block.id,
+        lesson_id: block.lesson_id,
+        block_type: block.block_type,
+        title: block.title,
+        text_content: block.text_content,
+        video_url: block.video_url,
+        video_provider: block.video_provider,
+        file_path: block.file_path,
+        file_name: block.file_name,
+        file_size: block.file_size,
+        order_index: index,
+        created_at: block.created_at,
+        updated_at: timestamp,
+      };
+    });
 
     const reorderError = reorderResults.find((result) => result.error)?.error;
     if (reorderError) return reply.status(400).send({ error: reorderError.message });

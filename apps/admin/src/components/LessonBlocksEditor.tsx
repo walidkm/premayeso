@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { getApiUrl, requestJson } from "@/lib/adminApi";
 import {
   getPersistedLessonBlocks,
@@ -70,59 +70,11 @@ function summarizeUrl(value: string | null): string {
   }
 }
 
-function formatFileSize(value: number | null | undefined): string {
-  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
-    return "Unknown size";
-  }
-
-  if (value >= 1024 * 1024) {
-    return `${(value / (1024 * 1024)).toFixed(1)} MB`;
-  }
-
-  if (value >= 1024) {
-    return `${Math.round(value / 102.4) / 10} KB`;
-  }
-
-  return `${value} B`;
-}
-
-function summarizePdf(fileName: string | null, fileSize: number | null): string {
-  if (!fileName) return "No PDF uploaded";
-  return `${fileName} · ${formatFileSize(fileSize)}`;
-}
-
-async function requestMultipartJson<T>(pathname: string, token: string, method: "POST" | "PATCH", body: FormData): Promise<T> {
-  const response = await fetch(getApiUrl(pathname), {
-    method,
-    headers: { Authorization: `Bearer ${token}` },
-    body,
-  });
-
-  if (!response.ok) {
-    const payload = (await response.json().catch(() => ({}))) as { error?: string };
-    throw new Error(payload.error ?? "Request failed");
-  }
-
-  return (await response.json()) as T;
-}
-
-function getBlockTone(blockType: LessonBlockType): "neutral" | "accent" | "success" {
-  if (blockType === "video") return "accent";
-  if (blockType === "pdf") return "success";
-  return "neutral";
-}
-
-function getBlockSummary(block: LessonBlockAdminDto): string {
-  if (block.block_type === "text") return summarizeText(block.text_content);
-  if (block.block_type === "video") return summarizeUrl(block.video_url);
-  return summarizePdf(block.file_name, block.file_size);
-}
-
-function getBlockTitle(block: LessonBlockAdminDto): string {
-  if (block.title) return block.title;
-  if (block.block_type === "text") return "Untitled text section";
-  if (block.block_type === "video") return "Untitled video section";
-  return "Untitled PDF attachment";
+function formatFileSize(bytes: number | null): string {
+  if (bytes === null || bytes === 0) return "0 B";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 const smallButtonClassName = `${secondaryButtonClassName} px-3 py-2 text-xs`;
@@ -138,6 +90,8 @@ export function LessonBlocksEditor({ token, lesson, onChanged }: Props) {
   const [importing, setImporting] = useState(false);
   const [movingBlockId, setMovingBlockId] = useState<string | null>(null);
   const [deletingBlockId, setDeletingBlockId] = useState<string | null>(null);
+  const [uploadingPdf, setUploadingPdf] = useState(false);
+  const pdfInputRef = useRef<HTMLInputElement>(null);
 
   function startCreate(blockType: LessonBlockType) {
     setError(null);
@@ -294,7 +248,49 @@ export function LessonBlocksEditor({ token, lesson, onChanged }: Props) {
     }
   }
 
-  const detectedProvider = form?.block_type === "video" ? inferVideoProviderFromUrl(form.video_url) : null;
+  async function handlePdfUpload(event: ChangeEvent<HTMLInputElement>) {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+
+    setUploadingPdf(true);
+    setError(null);
+
+    try {
+      const formData = new FormData();
+      for (let i = 0; i < files.length; i++) {
+        formData.append("file", files[i]!);
+      }
+
+      const response = await fetch(
+        getApiUrl(`/admin/lessons/${lesson.id}/blocks/upload-pdf`),
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+          body: formData,
+        }
+      );
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error((payload as { error?: string }).error ?? "PDF upload failed");
+      }
+
+      const result = (await response.json()) as { errors?: string[] };
+      if (result.errors && result.errors.length > 0) {
+        setError(result.errors.join("; "));
+      }
+
+      onChanged();
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "PDF upload failed");
+    } finally {
+      setUploadingPdf(false);
+      if (pdfInputRef.current) pdfInputRef.current.value = "";
+    }
+  }
+
+  const detectedProvider =
+    form?.block_type === "video" ? inferVideoProviderFromUrl(form.video_url) : null;
 
   return (
     <div className="mt-6 flex flex-col gap-6 border-t border-zinc-200 pt-6">
@@ -313,9 +309,18 @@ export function LessonBlocksEditor({ token, lesson, onChanged }: Props) {
             <button type="button" onClick={() => startCreate("video")} className={secondaryButtonClassName}>
               Add video section
             </button>
-            <button type="button" onClick={() => startCreate("pdf")} className={secondaryButtonClassName}>
-              Add PDF attachment
-            </button>
+            <label className={`${secondaryButtonClassName} cursor-pointer`}>
+              {uploadingPdf ? "Uploading..." : "Add PDF notes"}
+              <input
+                ref={pdfInputRef}
+                type="file"
+                accept=".pdf"
+                multiple
+                onChange={handlePdfUpload}
+                disabled={uploadingPdf}
+                className="sr-only"
+              />
+            </label>
           </div>
         ) : null}
       </div>
@@ -377,7 +382,16 @@ export function LessonBlocksEditor({ token, lesson, onChanged }: Props) {
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <Badge tone={getBlockTone(block.block_type)}>{block.block_type}</Badge>
+                    <Badge tone={block.block_type === "video" ? "accent" : block.block_type === "pdf" ? "warning" : "neutral"}>{block.block_type}</Badge>
+                    {block.block_type === "video" ? (
+                      <Badge tone="accent">{getVideoProviderLabel(block.video_provider)}</Badge>
+                    ) : null}
+                    {block.block_type === "pdf" && block.file_size ? (
+                      <span className={`text-xs ${form?.blockId === block.id ? "text-zinc-300" : "text-zinc-500"}`}>
+                        {formatFileSize(block.file_size)}
+                      </span>
+                    ) : null}
+                    <Badge tone={block.block_type === "video" ? "accent" : "neutral"}>{block.block_type}</Badge>
                     {block.block_type === "video" ? (
                       <Badge tone="accent">{getVideoProviderLabel(block.video_provider)}</Badge>
                     ) : null}
@@ -386,7 +400,11 @@ export function LessonBlocksEditor({ token, lesson, onChanged }: Props) {
                     </span>
                   </div>
                   <p className={`mt-3 text-sm font-semibold ${form?.blockId === block.id ? "text-white" : "text-zinc-950"}`}>
-                    {getBlockTitle(block)}
+                    {block.title ?? (block.block_type === "text" ? "Untitled text section" : block.block_type === "pdf" ? (block.file_name ?? "Untitled PDF") : "Untitled video section")}
+                  </p>
+                  <p className={`mt-2 text-sm ${form?.blockId === block.id ? "text-zinc-300" : "text-zinc-600"}`}>
+                    {block.block_type === "text" ? summarizeText(block.text_content) : block.block_type === "pdf" ? (block.file_name ?? "PDF file") : summarizeUrl(block.video_url)}
+                    {block.title ?? (block.block_type === "text" ? "Untitled text section" : "Untitled video section")}
                   </p>
                   <p className={`mt-2 text-sm ${form?.blockId === block.id ? "text-zinc-300" : "text-zinc-600"}`}>
                     {getBlockSummary(block)}
@@ -410,6 +428,11 @@ export function LessonBlocksEditor({ token, lesson, onChanged }: Props) {
                   >
                     Down
                   </button>
+                  {block.block_type !== "pdf" ? (
+                    <button type="button" onClick={() => startEdit(block)} className={smallButtonClassName}>
+                      Edit
+                    </button>
+                  ) : null}
                   <button type="button" onClick={() => startEdit(block)} className={smallButtonClassName}>
                     Edit
                   </button>

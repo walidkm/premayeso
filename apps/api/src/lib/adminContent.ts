@@ -6,6 +6,7 @@ export const PAPER_TYPES = ["maneb_past_paper", "school_exam", "question_pool"] 
 export const PAPER_EXAM_MODES = ["paper_layout", "randomized", "both"] as const;
 export const LESSON_CONTENT_TYPES = ["text", "video", "mixed"] as const;
 export const LESSON_BLOCK_TYPES = ["text", "video", "pdf"] as const;
+export const LESSON_BLOCK_TYPES = ["text", "video"] as const;
 export const VIDEO_PROVIDERS = ["youtube", "vimeo", "direct", "other"] as const;
 export const LESSON_FILES_BUCKET = "lesson-files";
 
@@ -307,6 +308,7 @@ export async function getLessonBlock(blockId: string): Promise<{ data: LessonBlo
   const { data, error } = await supabaseAdmin
     .from("lesson_blocks")
     .select("id, lesson_id, block_type, title, text_content, video_url, video_provider, file_path, file_name, file_size, order_index, created_at, updated_at")
+    .select("id, lesson_id, block_type, title, text_content, video_url, video_provider, order_index, created_at, updated_at")
     .eq("id", blockId)
     .maybeSingle();
 

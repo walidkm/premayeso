@@ -84,14 +84,18 @@ export type Lesson = {
 export type LessonBlock = {
   id: string;
   lesson_id: string;
-  block_type: "text" | "video";
+  block_type: "text" | "video" | "pdf";
   title: string | null;
   text_content: string | null;
   video_url: string | null;
   video_provider: "youtube" | "vimeo" | "direct" | "other" | null;
+  file_path: string | null;
+  file_name: string | null;
+  file_size: number | null;
   order_index: number;
   created_at: string;
   updated_at: string;
+  file_url: string | null;
 };
 
 export type LessonDetail = {

@@ -5,8 +5,9 @@ export const PAPER_SOURCE_TYPES = ["maneb", "school", "teacher"] as const;
 export const PAPER_TYPES = ["maneb_past_paper", "school_exam", "question_pool"] as const;
 export const PAPER_EXAM_MODES = ["paper_layout", "randomized", "both"] as const;
 export const LESSON_CONTENT_TYPES = ["text", "video", "mixed"] as const;
-export const LESSON_BLOCK_TYPES = ["text", "video"] as const;
+export const LESSON_BLOCK_TYPES = ["text", "video", "pdf"] as const;
 export const VIDEO_PROVIDERS = ["youtube", "vimeo", "direct", "other"] as const;
+export const LESSON_FILES_BUCKET = "lesson-files";
 
 export type ExamPath = (typeof ALL_EXAM_PATHS)[number];
 export type PaperSourceType = (typeof PAPER_SOURCE_TYPES)[number];
@@ -57,9 +58,13 @@ export type LessonBlockRow = {
   text_content: string | null;
   video_url: string | null;
   video_provider: VideoProvider | null;
+  file_path: string | null;
+  file_name: string | null;
+  file_size: number | null;
   order_index: number;
   created_at: string;
   updated_at: string;
+  file_url?: string | null;
 };
 
 export type LessonWithBlocksRow = LessonRow & {
@@ -206,9 +211,13 @@ export function buildLegacyLessonBlocks(
       text_content: lesson.content,
       video_url: null,
       video_provider: null,
+      file_path: null,
+      file_name: null,
+      file_size: null,
       order_index: blocks.length,
       created_at: LEGACY_BLOCK_TIMESTAMP,
       updated_at: LEGACY_BLOCK_TIMESTAMP,
+      file_url: null,
     });
   }
 
@@ -221,9 +230,13 @@ export function buildLegacyLessonBlocks(
       text_content: null,
       video_url: lesson.video_url,
       video_provider: inferVideoProviderFromUrl(lesson.video_url) ?? "other",
+      file_path: null,
+      file_name: null,
+      file_size: null,
       order_index: blocks.length,
       created_at: LEGACY_BLOCK_TIMESTAMP,
       updated_at: LEGACY_BLOCK_TIMESTAMP,
+      file_url: null,
     });
   }
 
@@ -237,6 +250,27 @@ export function resolveLessonBlocks(
 ): LessonBlockRow[] {
   const persistedBlocks = sortLessonBlocks(lesson.lesson_blocks);
   return persistedBlocks.length > 0 ? persistedBlocks : buildLegacyLessonBlocks(lesson);
+}
+
+export async function withSignedLessonBlockUrls(
+  blocks: LessonBlockRow[] | null | undefined
+): Promise<LessonBlockRow[]> {
+  return Promise.all(
+    (blocks ?? []).map(async (block) => {
+      if (block.block_type !== "pdf" || !block.file_path) {
+        return { ...block, file_url: null };
+      }
+
+      const { data, error } = await supabaseAdmin.storage
+        .from(LESSON_FILES_BUCKET)
+        .createSignedUrl(block.file_path, 60 * 60);
+
+      return {
+        ...block,
+        file_url: error ? null : data.signedUrl,
+      };
+    })
+  );
 }
 
 export async function getSubject(subjectId: string): Promise<{ data: SubjectRow | null; error: string | null }> {
@@ -272,7 +306,7 @@ export async function getLesson(lessonId: string): Promise<{ data: LessonRow | n
 export async function getLessonBlock(blockId: string): Promise<{ data: LessonBlockRow | null; error: string | null }> {
   const { data, error } = await supabaseAdmin
     .from("lesson_blocks")
-    .select("id, lesson_id, block_type, title, text_content, video_url, video_provider, order_index, created_at, updated_at")
+    .select("id, lesson_id, block_type, title, text_content, video_url, video_provider, file_path, file_name, file_size, order_index, created_at, updated_at")
     .eq("id", blockId)
     .maybeSingle();
 

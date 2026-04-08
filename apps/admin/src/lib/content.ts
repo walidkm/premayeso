@@ -2,7 +2,7 @@ export const FORM_LEVEL_OPTIONS = ["F1", "F2", "F3", "F4"] as const;
 export const PAPER_SOURCE_OPTIONS = ["maneb", "school", "teacher"] as const;
 export const PAPER_TYPE_OPTIONS = ["maneb_past_paper", "school_exam", "question_pool"] as const;
 export const PAPER_EXAM_MODE_OPTIONS = ["paper_layout", "randomized", "both"] as const;
-export const LESSON_BLOCK_TYPE_OPTIONS = ["text", "video"] as const;
+export const LESSON_BLOCK_TYPE_OPTIONS = ["text", "video", "pdf"] as const;
 export const VIDEO_PROVIDER_OPTIONS = ["youtube", "vimeo", "direct", "other"] as const;
 
 export type LessonBlockType = (typeof LESSON_BLOCK_TYPE_OPTIONS)[number];
@@ -36,9 +36,13 @@ export type LessonBlockAdminDto = {
   text_content: string | null;
   video_url: string | null;
   video_provider: VideoProvider | null;
+  file_path: string | null;
+  file_name: string | null;
+  file_size: number | null;
   order_index: number;
   created_at: string;
   updated_at: string;
+  file_url?: string | null;
 };
 
 export type LessonAdminDto = {
@@ -166,9 +170,13 @@ export function synthesizeLegacyLessonBlocks(
       text_content: lesson.content,
       video_url: null,
       video_provider: null,
+      file_path: null,
+      file_name: null,
+      file_size: null,
       order_index: blocks.length,
       created_at: LEGACY_BLOCK_TIMESTAMP,
       updated_at: LEGACY_BLOCK_TIMESTAMP,
+      file_url: null,
     });
   }
 
@@ -181,9 +189,13 @@ export function synthesizeLegacyLessonBlocks(
       text_content: null,
       video_url: lesson.video_url,
       video_provider: inferVideoProviderFromUrl(lesson.video_url) ?? "other",
+      file_path: null,
+      file_name: null,
+      file_size: null,
       order_index: blocks.length,
       created_at: LEGACY_BLOCK_TIMESTAMP,
       updated_at: LEGACY_BLOCK_TIMESTAMP,
+      file_url: null,
     });
   }
 

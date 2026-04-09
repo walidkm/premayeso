@@ -15,7 +15,7 @@ Malawi MANEB exam-learning platform.
 
 ## Structure
 
-```
+```text
 premayeso/
   apps/
     mobile/   # Expo React Native app
@@ -27,11 +27,19 @@ premayeso/
 
 ## Branch Workflow
 
-- `main` → stable, production-ready code
-- `dev` → active development branch
+- `main` -> stable, production-ready code
+- `dev` -> active development branch
 
 Work on `dev`, merge into `main` when stable.
 
-## Status
+## Deployment
 
-Initial monorepo setup complete. Next: scaffold apps/mobile, apps/admin, and apps/api.
+- `apps/admin` is the production web deployment and is linked to Vercel from the `apps/admin` directory.
+- Release flow is:
+  1. verify the release on `dev`
+  2. fast-forward `main` from `dev`
+  3. push `main` to trigger the production deployment
+- Before promoting to `main`, verify:
+  - `cd apps/admin && npm run build`
+  - `cd apps/api && npm test`
+  - required DB migrations are applied if the release depends on new structured-paper objects such as `admin_publish_paper_workbook(jsonb)`

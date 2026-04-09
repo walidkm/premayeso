@@ -3,14 +3,31 @@
   "title": "Replace with exact paper title",
   "examPath": "JCE",
   "subject": "Biology",
+  "sourceReference": {
+    "format": "official_image_only_docx_export",
+    "originalFile": "C:/path/to/source.docx"
+  },
   "sourceDescription": "Replace with the exact source paper reference",
-  "sourceDate": "YYYY-MM-DD",
+  "pageAssets": [],
+  "pageToSectionMap": [],
+  "questionInventory": [],
+  "figureDependencies": [],
   "expectedPreview": {
     "questionCount": 0,
     "sectionCount": 0,
     "partCount": 0,
     "essayCount": 0,
     "structuredCount": 0
+  },
+  "featureAudit": {
+    "hasMcq": true,
+    "hasStructuredMultipart": true,
+    "hasEssay": true,
+    "hasAnswerAnyN": true,
+    "splitProof": {
+      "realContentProof": [],
+      "syntheticOnly": []
+    }
   },
   "notes": [
     "Create the paired .xlsx workbook only after the exact source paper is supplied.",

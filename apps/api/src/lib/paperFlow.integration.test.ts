@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import {
   buildAttemptSummary,
   getAttemptQuestionSavedAnswers,
@@ -13,6 +14,7 @@ import {
   type AttemptRecord,
   type PaperStructure,
 } from "./paperAttempts.js";
+import { buildPaperWorkbookPreview, publishPaperWorkbook } from "./paperAdmin.js";
 import { supabaseAdmin } from "./supabaseAdmin.js";
 
 type SubjectTopicSeed = {
@@ -291,7 +293,8 @@ async function publishFixturePaper(seed: SubjectTopicSeed, namespace: string) {
 
 async function createAttempt(
   examPaperId: string,
-  expiresAt: string
+  expiresAt: string,
+  maxScore = 35
 ): Promise<AttemptRecord> {
   const now = new Date();
   const { data, error } = await supabaseAdmin
@@ -304,7 +307,7 @@ async function createAttempt(
       time_limit_seconds: 3600,
       started_at: now.toISOString(),
       expires_at: expiresAt,
-      max_score: 35,
+      max_score: maxScore,
     })
     .select("*")
     .single();
@@ -387,6 +390,189 @@ async function cleanupFixture(paperCode: string, rubricCode: string) {
   await supabaseAdmin.from("exam_papers").delete().eq("paper_code", paperCode);
   await supabaseAdmin.from("questions").delete().eq("pool_tag", poolTag);
   await supabaseAdmin.from("essay_rubrics").delete().eq("rubric_code", rubricCode);
+}
+
+function buildOfficialWorkbookUrl() {
+  return new URL("../../../../infra/samples/golden/maneb-2021-jce-biology-sample-j022.xlsx", import.meta.url);
+}
+
+function remapPublishError(error: unknown): never {
+  if (error instanceof Error && error.message.includes("Could not find the function public.admin_publish_paper_workbook")) {
+    throw new Error(
+      "Structured paper publish RPC is missing from the target database. Apply migration 013_paper_import_rpc.sql before running DB integration tests."
+    );
+  }
+
+  throw error;
+}
+
+async function loadOfficialWorkbookPreview() {
+  const buffer = readFileSync(buildOfficialWorkbookUrl());
+  return buildPaperWorkbookPreview(buffer);
+}
+
+function namespaceOfficialPreview(preview: Awaited<ReturnType<typeof buildPaperWorkbookPreview>>, namespace: string) {
+  if (!preview.paper) {
+    throw new Error("Official workbook preview did not contain a paper");
+  }
+
+  const rubricCodeMap = new Map(
+    preview.rubrics.map((rubric) => [rubric.rubricCode, `${rubric.rubricCode}-${namespace}`] as const)
+  );
+
+  return {
+    ...preview,
+    existingPaper: null,
+    canPublish: true,
+    paper: {
+      ...preview.paper,
+      paperCode: `${preview.paper.paperCode}-${namespace}`,
+    },
+    sections: preview.sections.map((section) => ({ ...section })),
+    questions: preview.questions.map((question) => ({
+      ...question,
+      options: question.options.map((option) => ({ ...option })),
+      rubricCode: question.rubricCode ? (rubricCodeMap.get(question.rubricCode) ?? question.rubricCode) : null,
+      parts: question.parts.map((part) => ({
+        ...part,
+        options: part.options.map((option) => ({ ...option })),
+        rubricCode: part.rubricCode ? (rubricCodeMap.get(part.rubricCode) ?? part.rubricCode) : null,
+      })),
+    })),
+    rubrics: preview.rubrics.map((rubric) => ({
+      ...rubric,
+      rubricCode: rubricCodeMap.get(rubric.rubricCode) ?? rubric.rubricCode,
+      criteria: rubric.criteria.map((criterion) => ({ ...criterion })),
+    })),
+    summary: { ...preview.summary },
+    issues: [...preview.issues],
+  };
+}
+
+async function publishOfficialWorkbook(preview: Awaited<ReturnType<typeof buildPaperWorkbookPreview>>, namespace: string) {
+  const namespacedPreview = namespaceOfficialPreview(preview, namespace);
+
+  try {
+    const result = await publishPaperWorkbook(namespacedPreview);
+    return {
+      examPaperId: result.examPaperId,
+      paperCode: namespacedPreview.paper!.paperCode,
+      rubricCodes: namespacedPreview.rubrics.map((rubric) => rubric.rubricCode),
+    };
+  } catch (error) {
+    remapPublishError(error);
+  }
+}
+
+async function cleanupPublishedWorkbook(paperCode: string, rubricCodes: string[]) {
+  const poolTag = `paper_import:${paperCode}`;
+  await supabaseAdmin.from("exam_papers").delete().eq("paper_code", paperCode);
+  await supabaseAdmin.from("questions").delete().eq("pool_tag", poolTag);
+  if (rubricCodes.length > 0) {
+    await supabaseAdmin.from("essay_rubrics").delete().in("rubric_code", rubricCodes);
+  }
+}
+
+async function answerEveryQuestion(attempt: AttemptRecord, structure: PaperStructure) {
+  for (const paperQuestion of structure.questions) {
+    const parts = paperQuestion.questions.question_parts ?? [];
+    const type = paperQuestion.questions.type;
+
+    if ((type === "mcq" || type === "true_false") && paperQuestion.questions.correct_option) {
+      await savePaperAnswer(attempt, paperQuestion, { selectedOption: paperQuestion.questions.correct_option });
+      continue;
+    }
+
+    if (parts.length > 0) {
+      await savePaperAnswer(attempt, paperQuestion, {
+        partAnswers: parts.map((questionPart) => ({
+          questionPartId: questionPart.id,
+          textAnswer: `Response for Q${paperQuestion.question_number} ${questionPart.part_label}`,
+        })),
+      });
+      continue;
+    }
+
+    await savePaperAnswer(attempt, paperQuestion, {
+      textAnswer: `Response for question ${paperQuestion.question_number}`,
+    });
+  }
+}
+
+async function finalizeManualMarks(attemptId: string, structure: PaperStructure) {
+  const { data: answerRows, error: answerError } = await supabaseAdmin
+    .from("attempt_answers")
+    .select("id, paper_question_id, question_part_id, is_selected_for_marking")
+    .eq("paper_attempt_id", attemptId)
+    .eq("is_selected_for_marking", true);
+
+  if (answerError) throw new Error(answerError.message);
+
+  const rubricIds = [
+    ...new Set(
+      structure.questions
+        .map((paperQuestion) => paperQuestion.questions.rubric_id)
+        .filter((rubricId): rubricId is string => Boolean(rubricId))
+    ),
+  ];
+
+  const rubricCriteriaByRubricId = new Map<
+    string,
+    Array<{ id: string; max_marks: number }>
+  >();
+
+  if (rubricIds.length > 0) {
+    const { data: rubrics, error: rubricError } = await supabaseAdmin
+      .from("essay_rubrics")
+      .select("id, essay_rubric_criteria(id, max_marks)")
+      .in("id", rubricIds);
+
+    if (rubricError) throw new Error(rubricError.message);
+
+    for (const rubric of rubrics ?? []) {
+      rubricCriteriaByRubricId.set(
+        rubric.id,
+        (rubric.essay_rubric_criteria ?? []).map((criterion: any) => ({
+          id: criterion.id,
+          max_marks: criterion.max_marks,
+        }))
+      );
+    }
+  }
+
+  const questionByPaperQuestionId = new Map(
+    structure.questions.map((paperQuestion) => [paperQuestion.id, paperQuestion] as const)
+  );
+
+  for (const answerRow of answerRows ?? []) {
+    const paperQuestion = questionByPaperQuestionId.get(answerRow.paper_question_id);
+    if (!paperQuestion) continue;
+
+    if (answerRow.question_part_id) {
+      const questionPart = paperQuestion.questions.question_parts?.find(
+        (candidate) => candidate.id === answerRow.question_part_id
+      );
+      if (!questionPart) continue;
+
+      await insertHumanMark(attemptId, answerRow.id, questionPart.marks);
+      await upsertReview(attemptId, paperQuestion.id, answerRow.id, "finalized", questionPart.marks);
+      continue;
+    }
+
+    const rubricId = paperQuestion.questions.rubric_id;
+    if (rubricId) {
+      const criteria = rubricCriteriaByRubricId.get(rubricId) ?? [];
+      const total = criteria.reduce((sum, criterion) => sum + criterion.max_marks, 0);
+      for (const criterion of criteria) {
+        await insertHumanMark(attemptId, answerRow.id, criterion.max_marks, criterion.id);
+      }
+      await upsertReview(attemptId, paperQuestion.id, answerRow.id, "finalized", total);
+      continue;
+    }
+
+    await insertHumanMark(attemptId, answerRow.id, paperQuestion.questions.marks);
+    await upsertReview(attemptId, paperQuestion.id, answerRow.id, "finalized", paperQuestion.questions.marks);
+  }
 }
 
 async function runPaperFlowIntegrationTests() {
@@ -568,6 +754,82 @@ async function runPaperFlowIntegrationTests() {
     }
   } finally {
     await cleanupFixture(paperCode, rubricCode);
+  }
+
+  {
+    const officialNamespace = `OFFICIAL-${randomUUID().slice(0, 8).toUpperCase()}`;
+    const preview = await loadOfficialWorkbookPreview();
+    assert.equal(preview.paper?.paperCode, "MANEB-JCE-BIOL-J022-2021-SAMPLE");
+    assert.equal(preview.issues.some((issue) => issue.level === "error"), false);
+    assert.equal(preview.summary.questionCount, 33);
+    assert.equal(preview.summary.sectionCount, 3);
+    assert.equal(preview.summary.partCount, 28);
+    assert.equal(preview.summary.essayCount, 3);
+    assert.equal(preview.summary.structuredCount, 10);
+
+    const { examPaperId, paperCode: officialPaperCode, rubricCodes } = await publishOfficialWorkbook(
+      preview,
+      officialNamespace
+    );
+
+    try {
+      const structure = await loadPaperStructure(examPaperId);
+      const maxScore = structure.paper.total_marks ?? 100;
+      const attempt = await createAttempt(
+        examPaperId,
+        new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+        maxScore
+      );
+
+      await answerEveryQuestion(attempt, structure);
+
+      const submittedResult = await submitPaperAttempt(attempt, structure, {});
+      assert.equal(submittedResult.ok, true);
+      if (!submittedResult.ok) return;
+
+      const submittedAttempt = submittedResult.attempt;
+      assert.equal(submittedAttempt.status, "submitted");
+      assert.equal(submittedAttempt.marking_status, "pending_manual");
+      assert.equal(submittedAttempt.objective_score, 20);
+      assert.equal(submittedAttempt.manual_score, 0);
+
+      const questionByNumber = new Map(
+        structure.questions.map((paperQuestion) => [paperQuestion.question_number, paperQuestion] as const)
+      );
+      const q1 = questionByNumber.get(1)!;
+      const q21 = questionByNumber.get(21)!;
+      const q31 = questionByNumber.get(31)!;
+
+      const learnerQuestion = sanitizeQuestionForDelivery(
+        q1,
+        submittedAttempt,
+        await getAttemptQuestionSavedAnswers(submittedAttempt.id, q1.id)
+      );
+      const learnerQuestionJson = JSON.stringify(learnerQuestion);
+      assert.equal(learnerQuestionJson.includes("correct_option"), false);
+      assert.equal(learnerQuestionJson.includes("expected_answer"), false);
+
+      const structuredAnswers = await getAttemptQuestionSavedAnswers(submittedAttempt.id, q21.id);
+      const essayAnswers = await getAttemptQuestionSavedAnswers(submittedAttempt.id, q31.id);
+      assert.ok(structuredAnswers.length > 0);
+      assert.equal(essayAnswers.length, 1);
+
+      await finalizeManualMarks(submittedAttempt.id, structure);
+
+      const completedAttempt = await refreshAttemptScores(submittedAttempt.id);
+      assert.equal(completedAttempt.marking_status, "completed");
+      assert.equal(completedAttempt.objective_score, 20);
+      assert.equal(completedAttempt.manual_score, 80);
+      assert.equal(completedAttempt.final_score, 100);
+      assert.equal(completedAttempt.max_score, 100);
+
+      const summary = await buildAttemptSummary(completedAttempt, structure);
+      const summaryJson = JSON.stringify(summary);
+      assert.equal(summaryJson.includes("presence of cones"), false);
+      assert.equal(summaryJson.includes("Response for question 31"), true);
+    } finally {
+      await cleanupPublishedWorkbook(officialPaperCode, rubricCodes);
+    }
   }
 }
 

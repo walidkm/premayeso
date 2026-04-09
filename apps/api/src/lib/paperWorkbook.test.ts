@@ -1,9 +1,13 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import * as XLSX from "xlsx";
 import { parsePaperWorkbook, type WorkbookCatalog } from "./paperWorkbook.js";
 
 const catalog: WorkbookCatalog = {
-  subjects: [{ id: "subject-1", code: "BIO", exam_path: "MSCE" }],
+  subjects: [
+    { id: "subject-1", code: "BIO", exam_path: "MSCE" },
+    { id: "subject-2", code: "BIOL-JCE", exam_path: "JCE" },
+  ],
   topics: [{ id: "topic-1", code: "CELL", subject_id: "subject-1", exam_path: "MSCE" }],
   subtopics: [{ id: "subtopic-1", code: "CELL-1", topic_id: "topic-1" }],
 };
@@ -164,6 +168,27 @@ function runPaperWorkbookTests() {
       catalog
     );
     assert.ok(parsed.issues.some((issue) => issue.field === "rubric_code" && issue.message.includes("every part")));
+  }
+
+  {
+    const goldenWorkbook = readFileSync(
+      new URL("../../../../infra/samples/golden/maneb-2021-jce-biology-sample-j022.xlsx", import.meta.url)
+    );
+    const parsed = parsePaperWorkbook(goldenWorkbook, catalog);
+
+    assert.equal(
+      parsed.issues.some((issue) => issue.level === "error"),
+      false
+    );
+    assert.equal(parsed.paper?.paperCode, "MANEB-JCE-BIOL-J022-2021-SAMPLE");
+    assert.equal(parsed.summary.questionCount, 33);
+    assert.equal(parsed.summary.sectionCount, 3);
+    assert.equal(parsed.summary.partCount, 28);
+    assert.equal(parsed.summary.essayCount, 3);
+    assert.equal(parsed.summary.structuredCount, 10);
+    assert.equal(parsed.summary.objectiveCount, 20);
+    assert.equal(parsed.summary.totalQuestionMarks, 100);
+    assert.equal(parsed.summary.totalSectionMarks, 100);
   }
 }
 

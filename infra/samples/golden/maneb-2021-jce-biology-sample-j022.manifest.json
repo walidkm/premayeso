@@ -1,0 +1,726 @@
+{
+  "paperCode": "MANEB-JCE-BIOL-J022-2021-SAMPLE",
+  "title": "2021 Junior Certificate Examination Biology Sample Paper",
+  "examPath": "JCE",
+  "subject": "Biology",
+  "subjectCode": "BIOL-JCE",
+  "subjectNumber": "J022",
+  "year": 2021,
+  "sourceDescription": "Manual transcription source for the official MANEB 2021 Junior Certificate Examination Biology Sample Paper (J022), stored as an extracted DOCX of page images.",
+  "sourceReference": {
+    "extractedDocx": "C:/Users/Walid/Downloads/maneb_jce_biology_extracted.docx",
+    "originalOfficialPaper": "MANEB 2021 Junior Certificate Examination / Biology Sample Paper / J022",
+    "format": "official_image_only_docx_export"
+  },
+  "paperMetadata": {
+    "totalPages": 14,
+    "durationMin": 120,
+    "totalMarks": 100,
+    "instructionsSummary": [
+      "The paper contains three sections: A, B and C.",
+      "Answer all the questions in each section.",
+      "Section A should be answered by encircling the letter with the correct answer.",
+      "Sections B and C should be answered in the spaces provided."
+    ]
+  },
+  "pageAssets": [
+    {
+      "pageNumber": 1,
+      "role": "cover",
+      "file": "maneb-2021-jce-biology-sample-assets/paper-pages/paper-page-01-cover.png",
+      "sourceFile": "maneb-2021-jce-biology-sample-assets/source-pages/page-01.png"
+    },
+    {
+      "pageNumber": 2,
+      "role": "section-a",
+      "file": "maneb-2021-jce-biology-sample-assets/paper-pages/paper-page-02.png",
+      "sourceFile": "maneb-2021-jce-biology-sample-assets/source-pages/page-07.png"
+    },
+    {
+      "pageNumber": 3,
+      "role": "section-a",
+      "file": "maneb-2021-jce-biology-sample-assets/paper-pages/paper-page-03.png",
+      "sourceFile": "maneb-2021-jce-biology-sample-assets/source-pages/page-08.png"
+    },
+    {
+      "pageNumber": 4,
+      "role": "section-a",
+      "file": "maneb-2021-jce-biology-sample-assets/paper-pages/paper-page-04.png",
+      "sourceFile": "maneb-2021-jce-biology-sample-assets/source-pages/page-09.png"
+    },
+    {
+      "pageNumber": 5,
+      "role": "section-b",
+      "file": "maneb-2021-jce-biology-sample-assets/paper-pages/paper-page-05.png",
+      "sourceFile": "maneb-2021-jce-biology-sample-assets/source-pages/page-10.png"
+    },
+    {
+      "pageNumber": 6,
+      "role": "section-b",
+      "file": "maneb-2021-jce-biology-sample-assets/paper-pages/paper-page-06.png",
+      "sourceFile": "maneb-2021-jce-biology-sample-assets/source-pages/page-11.png"
+    },
+    {
+      "pageNumber": 7,
+      "role": "section-b",
+      "file": "maneb-2021-jce-biology-sample-assets/paper-pages/paper-page-07.png",
+      "sourceFile": "maneb-2021-jce-biology-sample-assets/source-pages/page-12.png"
+    },
+    {
+      "pageNumber": 8,
+      "role": "section-b",
+      "file": "maneb-2021-jce-biology-sample-assets/paper-pages/paper-page-08.png",
+      "sourceFile": "maneb-2021-jce-biology-sample-assets/source-pages/page-13.png"
+    },
+    {
+      "pageNumber": 9,
+      "role": "section-b",
+      "file": "maneb-2021-jce-biology-sample-assets/paper-pages/paper-page-09.png",
+      "sourceFile": "maneb-2021-jce-biology-sample-assets/source-pages/page-14.png"
+    },
+    {
+      "pageNumber": 10,
+      "role": "section-b",
+      "file": "maneb-2021-jce-biology-sample-assets/paper-pages/paper-page-10.png",
+      "sourceFile": "maneb-2021-jce-biology-sample-assets/source-pages/page-02.png"
+    },
+    {
+      "pageNumber": 11,
+      "role": "section-b",
+      "file": "maneb-2021-jce-biology-sample-assets/paper-pages/paper-page-11.png",
+      "sourceFile": "maneb-2021-jce-biology-sample-assets/source-pages/page-03.png"
+    },
+    {
+      "pageNumber": 12,
+      "role": "section-c",
+      "file": "maneb-2021-jce-biology-sample-assets/paper-pages/paper-page-12.png",
+      "sourceFile": "maneb-2021-jce-biology-sample-assets/source-pages/page-04.png"
+    },
+    {
+      "pageNumber": 13,
+      "role": "section-c",
+      "file": "maneb-2021-jce-biology-sample-assets/paper-pages/paper-page-13.png",
+      "sourceFile": "maneb-2021-jce-biology-sample-assets/source-pages/page-05.png"
+    },
+    {
+      "pageNumber": 14,
+      "role": "section-c",
+      "file": "maneb-2021-jce-biology-sample-assets/paper-pages/paper-page-14.png",
+      "sourceFile": "maneb-2021-jce-biology-sample-assets/source-pages/page-06.png"
+    }
+  ],
+  "pageToSectionMap": [
+    {
+      "sectionCode": "A",
+      "pages": [
+        2,
+        3,
+        4
+      ],
+      "questionRange": [
+        1,
+        20
+      ]
+    },
+    {
+      "sectionCode": "B",
+      "pages": [
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11
+      ],
+      "questionRange": [
+        21,
+        30
+      ]
+    },
+    {
+      "sectionCode": "C",
+      "pages": [
+        12,
+        13,
+        14
+      ],
+      "questionRange": [
+        31,
+        33
+      ]
+    }
+  ],
+  "questionInventory": [
+    {
+      "questionNumber": 1,
+      "sectionCode": "A",
+      "type": "mcq",
+      "marks": 1,
+      "partCount": 0,
+      "sourcePages": [
+        2
+      ],
+      "dependsOnFigure": false
+    },
+    {
+      "questionNumber": 2,
+      "sectionCode": "A",
+      "type": "mcq",
+      "marks": 1,
+      "partCount": 0,
+      "sourcePages": [
+        2
+      ],
+      "dependsOnFigure": false
+    },
+    {
+      "questionNumber": 3,
+      "sectionCode": "A",
+      "type": "mcq",
+      "marks": 1,
+      "partCount": 0,
+      "sourcePages": [
+        2
+      ],
+      "dependsOnFigure": true
+    },
+    {
+      "questionNumber": 4,
+      "sectionCode": "A",
+      "type": "mcq",
+      "marks": 1,
+      "partCount": 0,
+      "sourcePages": [
+        2
+      ],
+      "dependsOnFigure": true
+    },
+    {
+      "questionNumber": 5,
+      "sectionCode": "A",
+      "type": "mcq",
+      "marks": 1,
+      "partCount": 0,
+      "sourcePages": [
+        2
+      ],
+      "dependsOnFigure": true
+    },
+    {
+      "questionNumber": 6,
+      "sectionCode": "A",
+      "type": "mcq",
+      "marks": 1,
+      "partCount": 0,
+      "sourcePages": [
+        2
+      ],
+      "dependsOnFigure": false
+    },
+    {
+      "questionNumber": 7,
+      "sectionCode": "A",
+      "type": "mcq",
+      "marks": 1,
+      "partCount": 0,
+      "sourcePages": [
+        3
+      ],
+      "dependsOnFigure": true
+    },
+    {
+      "questionNumber": 8,
+      "sectionCode": "A",
+      "type": "mcq",
+      "marks": 1,
+      "partCount": 0,
+      "sourcePages": [
+        3
+      ],
+      "dependsOnFigure": true
+    },
+    {
+      "questionNumber": 9,
+      "sectionCode": "A",
+      "type": "mcq",
+      "marks": 1,
+      "partCount": 0,
+      "sourcePages": [
+        3
+      ],
+      "dependsOnFigure": true
+    },
+    {
+      "questionNumber": 10,
+      "sectionCode": "A",
+      "type": "mcq",
+      "marks": 1,
+      "partCount": 0,
+      "sourcePages": [
+        3
+      ],
+      "dependsOnFigure": true
+    },
+    {
+      "questionNumber": 11,
+      "sectionCode": "A",
+      "type": "mcq",
+      "marks": 1,
+      "partCount": 0,
+      "sourcePages": [
+        3
+      ],
+      "dependsOnFigure": true
+    },
+    {
+      "questionNumber": 12,
+      "sectionCode": "A",
+      "type": "mcq",
+      "marks": 1,
+      "partCount": 0,
+      "sourcePages": [
+        4
+      ],
+      "dependsOnFigure": true
+    },
+    {
+      "questionNumber": 13,
+      "sectionCode": "A",
+      "type": "mcq",
+      "marks": 1,
+      "partCount": 0,
+      "sourcePages": [
+        4
+      ],
+      "dependsOnFigure": true
+    },
+    {
+      "questionNumber": 14,
+      "sectionCode": "A",
+      "type": "mcq",
+      "marks": 1,
+      "partCount": 0,
+      "sourcePages": [
+        4
+      ],
+      "dependsOnFigure": false
+    },
+    {
+      "questionNumber": 15,
+      "sectionCode": "A",
+      "type": "mcq",
+      "marks": 1,
+      "partCount": 0,
+      "sourcePages": [
+        4
+      ],
+      "dependsOnFigure": false
+    },
+    {
+      "questionNumber": 16,
+      "sectionCode": "A",
+      "type": "mcq",
+      "marks": 1,
+      "partCount": 0,
+      "sourcePages": [
+        4
+      ],
+      "dependsOnFigure": false
+    },
+    {
+      "questionNumber": 17,
+      "sectionCode": "A",
+      "type": "mcq",
+      "marks": 1,
+      "partCount": 0,
+      "sourcePages": [
+        4
+      ],
+      "dependsOnFigure": false
+    },
+    {
+      "questionNumber": 18,
+      "sectionCode": "A",
+      "type": "mcq",
+      "marks": 1,
+      "partCount": 0,
+      "sourcePages": [
+        4
+      ],
+      "dependsOnFigure": false
+    },
+    {
+      "questionNumber": 19,
+      "sectionCode": "A",
+      "type": "mcq",
+      "marks": 1,
+      "partCount": 0,
+      "sourcePages": [
+        4
+      ],
+      "dependsOnFigure": false
+    },
+    {
+      "questionNumber": 20,
+      "sectionCode": "A",
+      "type": "mcq",
+      "marks": 1,
+      "partCount": 0,
+      "sourcePages": [
+        4
+      ],
+      "dependsOnFigure": false
+    },
+    {
+      "questionNumber": 21,
+      "sectionCode": "B",
+      "type": "structured",
+      "marks": 3,
+      "partCount": 2,
+      "sourcePages": [
+        5
+      ],
+      "dependsOnFigure": false
+    },
+    {
+      "questionNumber": 22,
+      "sectionCode": "B",
+      "type": "structured",
+      "marks": 3,
+      "partCount": 2,
+      "sourcePages": [
+        5
+      ],
+      "dependsOnFigure": false
+    },
+    {
+      "questionNumber": 23,
+      "sectionCode": "B",
+      "type": "structured",
+      "marks": 9,
+      "partCount": 3,
+      "sourcePages": [
+        6
+      ],
+      "dependsOnFigure": true
+    },
+    {
+      "questionNumber": 24,
+      "sectionCode": "B",
+      "type": "structured",
+      "marks": 5,
+      "partCount": 3,
+      "sourcePages": [
+        7
+      ],
+      "dependsOnFigure": true
+    },
+    {
+      "questionNumber": 25,
+      "sectionCode": "B",
+      "type": "structured",
+      "marks": 4,
+      "partCount": 2,
+      "sourcePages": [
+        8
+      ],
+      "dependsOnFigure": false
+    },
+    {
+      "questionNumber": 26,
+      "sectionCode": "B",
+      "type": "structured",
+      "marks": 3,
+      "partCount": 2,
+      "sourcePages": [
+        8
+      ],
+      "dependsOnFigure": false
+    },
+    {
+      "questionNumber": 27,
+      "sectionCode": "B",
+      "type": "structured",
+      "marks": 3,
+      "partCount": 2,
+      "sourcePages": [
+        8,
+        9
+      ],
+      "dependsOnFigure": true
+    },
+    {
+      "questionNumber": 28,
+      "sectionCode": "B",
+      "type": "structured",
+      "marks": 6,
+      "partCount": 4,
+      "sourcePages": [
+        9,
+        10
+      ],
+      "dependsOnFigure": true
+    },
+    {
+      "questionNumber": 29,
+      "sectionCode": "B",
+      "type": "structured",
+      "marks": 4,
+      "partCount": 3,
+      "sourcePages": [
+        10
+      ],
+      "dependsOnFigure": true
+    },
+    {
+      "questionNumber": 30,
+      "sectionCode": "B",
+      "type": "structured",
+      "marks": 10,
+      "partCount": 5,
+      "sourcePages": [
+        11
+      ],
+      "dependsOnFigure": false
+    },
+    {
+      "questionNumber": 31,
+      "sectionCode": "C",
+      "type": "essay",
+      "marks": 10,
+      "partCount": 0,
+      "sourcePages": [
+        12
+      ],
+      "dependsOnFigure": false
+    },
+    {
+      "questionNumber": 32,
+      "sectionCode": "C",
+      "type": "essay",
+      "marks": 10,
+      "partCount": 0,
+      "sourcePages": [
+        13
+      ],
+      "dependsOnFigure": false
+    },
+    {
+      "questionNumber": 33,
+      "sectionCode": "C",
+      "type": "essay",
+      "marks": 10,
+      "partCount": 0,
+      "sourcePages": [
+        14
+      ],
+      "dependsOnFigure": false
+    }
+  ],
+  "figureDependencies": [
+    {
+      "questionNumber": 3,
+      "label": "Figure 1",
+      "pages": [
+        2
+      ],
+      "note": "Leaf diagram used by Questions 3 and 4.",
+      "assetFiles": [
+        "maneb-2021-jce-biology-sample-assets/paper-pages/paper-page-02.png"
+      ]
+    },
+    {
+      "questionNumber": 4,
+      "label": "Figure 1",
+      "pages": [
+        2
+      ],
+      "note": "Leaf diagram used by Questions 3 and 4.",
+      "assetFiles": [
+        "maneb-2021-jce-biology-sample-assets/paper-pages/paper-page-02.png"
+      ]
+    },
+    {
+      "questionNumber": 5,
+      "label": "Figure 2",
+      "pages": [
+        2
+      ],
+      "note": "Root system diagram used by Question 5.",
+      "assetFiles": [
+        "maneb-2021-jce-biology-sample-assets/paper-pages/paper-page-02.png"
+      ]
+    },
+    {
+      "questionNumber": 7,
+      "label": "Figure 3",
+      "pages": [
+        3
+      ],
+      "note": "Vertebrate diagram used by Questions 7 and 8.",
+      "assetFiles": [
+        "maneb-2021-jce-biology-sample-assets/paper-pages/paper-page-03.png"
+      ]
+    },
+    {
+      "questionNumber": 8,
+      "label": "Figure 3",
+      "pages": [
+        3
+      ],
+      "note": "Vertebrate diagram used by Questions 7 and 8.",
+      "assetFiles": [
+        "maneb-2021-jce-biology-sample-assets/paper-pages/paper-page-03.png"
+      ]
+    },
+    {
+      "questionNumber": 9,
+      "label": "Table 1",
+      "pages": [
+        3
+      ],
+      "note": "Germination table used by Questions 9 to 11.",
+      "assetFiles": [
+        "maneb-2021-jce-biology-sample-assets/paper-pages/paper-page-03.png"
+      ]
+    },
+    {
+      "questionNumber": 10,
+      "label": "Table 1",
+      "pages": [
+        3
+      ],
+      "note": "Germination table used by Questions 9 to 11.",
+      "assetFiles": [
+        "maneb-2021-jce-biology-sample-assets/paper-pages/paper-page-03.png"
+      ]
+    },
+    {
+      "questionNumber": 11,
+      "label": "Table 1",
+      "pages": [
+        3
+      ],
+      "note": "Germination table used by Questions 9 to 11.",
+      "assetFiles": [
+        "maneb-2021-jce-biology-sample-assets/paper-pages/paper-page-03.png"
+      ]
+    },
+    {
+      "questionNumber": 12,
+      "label": "Figure 4",
+      "pages": [
+        4
+      ],
+      "note": "Mammal skull used by Questions 12 and 13.",
+      "assetFiles": [
+        "maneb-2021-jce-biology-sample-assets/paper-pages/paper-page-04.png"
+      ]
+    },
+    {
+      "questionNumber": 13,
+      "label": "Figure 4",
+      "pages": [
+        4
+      ],
+      "note": "Mammal skull used by Questions 12 and 13.",
+      "assetFiles": [
+        "maneb-2021-jce-biology-sample-assets/paper-pages/paper-page-04.png"
+      ]
+    },
+    {
+      "questionNumber": 23,
+      "label": "Figure 5",
+      "pages": [
+        6
+      ],
+      "note": "Food web used by Question 23.",
+      "assetFiles": [
+        "maneb-2021-jce-biology-sample-assets/paper-pages/paper-page-06.png"
+      ]
+    },
+    {
+      "questionNumber": 24,
+      "label": "Figure 6",
+      "pages": [
+        7
+      ],
+      "note": "Photosynthesis experiment diagram used by Question 24.",
+      "assetFiles": [
+        "maneb-2021-jce-biology-sample-assets/paper-pages/paper-page-07.png"
+      ]
+    },
+    {
+      "questionNumber": 27,
+      "label": "Figure 7",
+      "pages": [
+        8,
+        9
+      ],
+      "note": "Arm skeleton and muscle diagram used by Question 27.",
+      "assetFiles": [
+        "maneb-2021-jce-biology-sample-assets/paper-pages/paper-page-08.png",
+        "maneb-2021-jce-biology-sample-assets/paper-pages/paper-page-09.png"
+      ]
+    },
+    {
+      "questionNumber": 28,
+      "label": "Figure 8",
+      "pages": [
+        9,
+        10
+      ],
+      "note": "Blood component diagram used by Question 28.",
+      "assetFiles": [
+        "maneb-2021-jce-biology-sample-assets/paper-pages/paper-page-09.png",
+        "maneb-2021-jce-biology-sample-assets/paper-pages/paper-page-10.png"
+      ]
+    },
+    {
+      "questionNumber": 29,
+      "label": "Figure 9",
+      "pages": [
+        10
+      ],
+      "note": "Micro-organism diagram used by Question 29.",
+      "assetFiles": [
+        "maneb-2021-jce-biology-sample-assets/paper-pages/paper-page-10.png"
+      ]
+    }
+  ],
+  "expectedPreview": {
+    "questionCount": 33,
+    "sectionCount": 3,
+    "partCount": 28,
+    "essayCount": 3,
+    "structuredCount": 10,
+    "objectiveCount": 20,
+    "totalQuestionMarks": 100,
+    "totalSectionMarks": 100,
+    "totalRubricMarks": 30
+  },
+  "featureAudit": {
+    "hasMcq": true,
+    "hasStructuredMultipart": true,
+    "hasEssay": true,
+    "hasAnswerAnyN": false,
+    "hasFigures": true,
+    "splitProof": {
+      "realContentProof": [
+        "mcq",
+        "structured_multipart",
+        "essay",
+        "figure_dependencies"
+      ],
+      "syntheticOnly": [
+        "answer_any_n"
+      ]
+    }
+  },
+  "notes": [
+    "Question content stays faithful to the official paper; internal answer keys, expected answers and essay rubrics were authored for platform validation.",
+    "The official source does not contain an answer_any_n section. That behavior remains covered only by synthetic DB-backed fixtures.",
+    "Figure-bearing questions rely on companion page assets referenced here; no runtime schema field was added for figures."
+  ]
+}

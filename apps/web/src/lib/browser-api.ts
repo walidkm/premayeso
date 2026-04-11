@@ -1,6 +1,13 @@
 import { getApiUrl } from "./app-config";
 import { type ExamPath } from "./exam-paths";
 
+export type SubscriptionStatus =
+  | "free"
+  | "premium"
+  | "school"
+  | "voucher"
+  | "expired";
+
 export type StudentIdentity = {
   id: string;
   phone: string | null;
@@ -8,8 +15,8 @@ export type StudentIdentity = {
   name: string | null;
   full_name: string | null;
   role: string;
-  exam_path: string | null;
-  subscription_status: string;
+  exam_path: ExamPath | null;
+  subscription_status: SubscriptionStatus;
   admin_permissions: {
     can_author_content: boolean;
     can_review_content: boolean;

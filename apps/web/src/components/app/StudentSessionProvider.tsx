@@ -7,7 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { StudentIdentity } from "@/lib/browser-api";
 import type { ExamPath } from "@/lib/exam-paths";
 
@@ -41,6 +41,8 @@ async function readSession(): Promise<StudentIdentity | null> {
 export function StudentSessionProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const searchQuery = searchParams.toString();
   const [state, setState] = useState<StudentSessionState>({ status: "loading" });
 
   const refreshSession = async () => {
@@ -54,16 +56,38 @@ export function StudentSessionProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
-    void refreshSession().catch(() => {
-      setState({ status: "unauthenticated" });
-    });
+    let cancelled = false;
+
+    readSession()
+      .then((user) => {
+        if (cancelled) {
+          return;
+        }
+
+        if (!user) {
+          setState({ status: "unauthenticated" });
+          return;
+        }
+
+        setState({ status: "authenticated", user });
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setState({ status: "unauthenticated" });
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
     if (state.status === "unauthenticated" && pathname.startsWith("/app")) {
-      router.replace("/login");
+      const currentPath = searchQuery ? `${pathname}?${searchQuery}` : pathname;
+      router.replace(`/login?next=${encodeURIComponent(currentPath)}`);
     }
-  }, [pathname, router, state.status]);
+  }, [pathname, router, searchQuery, state.status]);
 
   const signOut = async () => {
     await fetch("/api/auth/logout", {

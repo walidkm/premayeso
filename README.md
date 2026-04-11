@@ -14,6 +14,7 @@ Malawi MANEB exam-learning platform.
 - `apps/web` uses `API_URL` or `NEXT_PUBLIC_API_URL` for the backend and `NEXT_PUBLIC_ADMIN_URL` for the admin subdomain.
 - `apps/mobile` reads `EXPO_PUBLIC_API_URL` from its environment. For a physical device, use your machine's LAN URL such as `http://192.168.1.4:4000`.
 - `apps/admin` uses Supabase Auth for sign-in and only allows canonical admin roles such as `content_author`, `reviewer`, `platform_admin`, and `super_admin`.
+- do not commit `.vercel/` directories; Vercel project linking stays local to each machine
 
 ## Structure
 
@@ -37,12 +38,14 @@ Work on `dev`, merge into `main` when stable.
 
 ## Deployment
 
-- `apps/web` should own the public domain and learner routes:
-  - `premayeso.com`
-  - `www.premayeso.com`
-- `apps/admin` should own the admin subdomain:
-  - `admin.premayeso.com`
-- `apps/api` remains the backend service and can be mapped separately if required, for example `api.premayeso.com`.
+- Vercel projects are split by app root:
+  - `apps/web` -> `premayeso.com` and `www.premayeso.com`
+  - `apps/admin` -> `admin.premayeso.com`
+  - `apps/api` -> `api.premayeso.com`
+- Keep the existing Vercel project `premayeso` attached to `apps/admin`.
+- Create separate Vercel projects for `apps/web` and `apps/api`; do not route all domains through one project.
+- Configure preview and production environment variables per Vercel project, not via committed `.vercel/project.json`.
+- Detailed dashboard rollout steps live in [docs/vercel-rollout.md](/Users/Walid/OneDrive/Belgeler/GitHub/premayeso/docs/vercel-rollout.md).
 - Release flow is:
   1. verify the release on `dev`
   2. fast-forward `main` from `dev`

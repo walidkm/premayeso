@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { StudentLoginCard } from "@/components/auth/StudentLoginCard";
+import { getAdminUrl } from "@/lib/app-config";
 
 export const metadata: Metadata = {
   title: "Student login",
@@ -15,6 +16,7 @@ export default async function LoginPage({
   const params = searchParams ? await searchParams : {};
   const requested = Array.isArray(params.next) ? params.next[0] : params.next;
   const nextPath = requested?.startsWith("/app") ? requested : "/app";
+  const adminLoginUrl = getAdminUrl("/login");
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col justify-center px-5 py-10 sm:px-8">
@@ -30,6 +32,13 @@ export default async function LoginPage({
             PreMayeso is built first for Malawi learners preparing for MANEB exams.
             Use your phone number to sign in, continue with JCE today, and join the
             waitlist if you want early access to MSCE or PSLCE next.
+          </p>
+          <p className="mt-4 text-sm leading-6 text-slate-500">
+            Admins should sign in through{" "}
+            <a href={adminLoginUrl} className="font-semibold text-brand hover:text-brand-strong">
+              the admin login
+            </a>
+            , not the learner app.
           </p>
 
           <div className="mt-8 grid gap-4 sm:grid-cols-3">

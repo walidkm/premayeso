@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { getAdminUrl } from "@/lib/app-config";
 import { EXAM_PATH_COPY } from "@/lib/exam-paths";
 
 const faqs = [
@@ -25,6 +26,8 @@ const faqs = [
 ];
 
 export function MarketingHome() {
+  const adminLoginHref = getAdminUrl("/login");
+
   return (
     <main className="pb-16">
       <section className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-5 pt-5 sm:px-8">
@@ -72,7 +75,7 @@ export function MarketingHome() {
 
             <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
               <Link
-                href="/app"
+                href="/login"
                 className="rounded-full bg-brand px-6 py-3 text-center text-sm font-semibold text-white transition hover:bg-brand-strong"
               >
                 Start Learning
@@ -84,7 +87,7 @@ export function MarketingHome() {
                 Student Login
               </Link>
               <Link
-                href="/app/subjects"
+                href="/login?next=%2Fapp%2Fsubjects"
                 className="rounded-full border border-slate-300/80 px-6 py-3 text-center text-sm font-semibold text-slate-700 transition hover:border-slate-500 hover:text-slate-900"
               >
                 Explore Subjects
@@ -234,8 +237,9 @@ export function MarketingHome() {
             </p>
             <p>
               Admin access lives on a separate domain and is intentionally unreachable
-              from learner routes. That keeps learner navigation clear and makes the
-              platform easy to explain to schools, parents, and students.
+              from learner routes. That keeps the root experience public, keeps learner
+              navigation clear, and makes the platform easy to explain to schools,
+              parents, and students.
             </p>
           </div>
         </div>
@@ -291,12 +295,12 @@ export function MarketingHome() {
       <footer className="mx-auto mt-20 w-full max-w-7xl px-5 pb-6 sm:px-8">
         <div className="flex flex-col gap-4 rounded-[2rem] border border-border bg-white/80 px-6 py-5 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between">
           <p>PreMayeso helps Malawi learners prepare for MANEB exams with a cleaner public-first experience.</p>
-          <Link
-            href="/admin/login"
+          <a
+            href={adminLoginHref}
             className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400 transition hover:text-slate-700"
           >
             Admin Login
-          </Link>
+          </a>
         </div>
       </footer>
     </main>

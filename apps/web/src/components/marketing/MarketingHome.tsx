@@ -117,7 +117,7 @@ export function MarketingHome() {
               </p>
               <p className="mt-3 text-sm leading-7 text-amber-900/80">
                 Open the learner app, choose your subject, and move from topic to lesson
-                with a cleaner revision flow than the current admin-first setup.
+                with a clear and consistent revision flow.
               </p>
             </div>
 
@@ -227,14 +227,15 @@ export function MarketingHome() {
           </h2>
           <div className="mt-6 space-y-4 text-sm leading-7 text-slate-600">
             <p>
-              The root domain now introduces the product publicly instead of opening on
-              admin login. Students get a dedicated login, a dedicated learner app, and
-              a simpler route structure under <code className="rounded bg-slate-100 px-1.5 py-0.5">/app</code>.
+              Students get a dedicated login, a dedicated learner app, and a focused
+              route structure under <code className="rounded bg-slate-100 px-1.5 py-0.5">/app</code>.
+              The public landing page explains the product clearly without mixing in
+              admin or content-management flows.
             </p>
             <p>
-              Admin access stays intentionally separate under the admin domain. That keeps
-              learner navigation clear, reduces route collisions, and makes the platform
-              easier to explain to schools, parents, and students.
+              Admin access lives on a separate domain and is intentionally unreachable
+              from learner routes. That keeps learner navigation clear and makes the
+              platform easy to explain to schools, parents, and students.
             </p>
           </div>
         </div>

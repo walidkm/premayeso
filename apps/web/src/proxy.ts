@@ -13,6 +13,7 @@ export function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
   const sessionExists = hasSessionCookie(request);
 
+  // Protect /app/* — unauthenticated visitors go to /login
   if (pathname.startsWith("/app") && !sessionExists) {
     const loginUrl = request.nextUrl.clone();
     loginUrl.pathname = "/login";
@@ -23,6 +24,7 @@ export function proxy(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
+  // Already logged-in visitors hitting /login or /signup go straight to /app
   if ((pathname === "/login" || pathname === "/signup") && sessionExists) {
     const appUrl = request.nextUrl.clone();
     appUrl.pathname = "/app";

@@ -9,16 +9,28 @@ import {
   getBearerToken,
   verifyAccess,
 } from "../lib/jwt.js";
+import {
+  buildAdminPermissions,
+  isAdminCapableRole,
+  normalizeSubscriptionStatus,
+  normalizeUserRole,
+} from "../lib/roles.js";
 
-// ── Helpers ───────────────────────────────────────────────────
+type UserIdentityRow = {
+  id: string;
+  phone: string | null;
+  email?: string | null;
+  full_name: string | null;
+  role: string | null;
+  exam_path: string | null;
+  subscription_status: string | null;
+};
 
 function generateOtp(): string {
-  // 6-digit zero-padded
   return String(randomInt(0, 1_000_000)).padStart(6, "0");
 }
 
 async function sendOtp(phone: string, otp: string): Promise<void> {
-  // Read AT credentials from settings table (with env var fallback)
   let atKey = process.env.AT_API_KEY ?? "";
   let atUsername = process.env.AT_USERNAME ?? "sandbox";
   let atEnabled = !!atKey;
@@ -30,15 +42,15 @@ async function sendOtp(phone: string, otp: string): Promise<void> {
       .in("key", ["at_api_key", "at_username", "at_enabled"]);
 
     const map = Object.fromEntries(
-      (data ?? []).map((r: { key: string; value: string }) => [r.key, r.value])
+      (data ?? []).map((row: { key: string; value: string }) => [row.key, row.value])
     );
 
-    if (map.at_api_key && map.at_api_key !== "••••••••") atKey = map.at_api_key;
+    if (map.at_api_key && map.at_api_key !== "â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢") atKey = map.at_api_key;
     if (map.at_username) atUsername = map.at_username;
     if (map.at_enabled === "true") atEnabled = true;
     if (map.at_enabled === "false") atEnabled = false;
   } catch {
-    // Fall through to env var values if settings read fails
+    // Fall back to env vars if settings are unavailable.
   }
 
   if (atEnabled && atKey) {
@@ -57,18 +69,32 @@ async function sendOtp(phone: string, otp: string): Promise<void> {
         }),
       });
     } catch {
-      // Fall through to console log if AT fails
+      // If SMS sending fails, the console fallback still makes local development usable.
     }
   }
 
-  console.log(`\n[OTP] ${phone} → ${otp}\n`);
+  console.log(`\n[OTP] ${phone} â†’ ${otp}\n`);
 }
 
-// ── Routes ────────────────────────────────────────────────────
+function buildUserIdentity(user: UserIdentityRow) {
+  const role = normalizeUserRole(user.role) ?? "student";
+  const subscriptionStatus =
+    normalizeSubscriptionStatus(user.subscription_status) ?? "free";
+
+  return {
+    id: user.id,
+    phone: user.phone ?? user.email ?? null,
+    identifier: user.phone ?? user.email ?? null,
+    name: user.full_name ?? null,
+    full_name: user.full_name ?? null,
+    role,
+    exam_path: user.exam_path ?? null,
+    subscription_status: subscriptionStatus,
+    admin_permissions: buildAdminPermissions(role),
+  };
+}
 
 export async function authRoutes(app: FastifyInstance) {
-  // POST /api/v1/auth/request-otp
-  // Body: { phone: "+265..." }
   app.post<{ Body: { phone: string } }>(
     "/api/v1/auth/request-otp",
     async (request, reply) => {
@@ -79,9 +105,8 @@ export async function authRoutes(app: FastifyInstance) {
 
       const otp = generateOtp();
       const otpHash = await bcrypt.hash(otp, 10);
-      const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString(); // 5 min
+      const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
 
-      // Delete any previous unverified OTPs for this phone
       await supabaseAdmin
         .from("otp_logs")
         .delete()
@@ -104,8 +129,6 @@ export async function authRoutes(app: FastifyInstance) {
     }
   );
 
-  // POST /api/v1/auth/verify-otp
-  // Body: { phone, otp, name? }
   app.post<{ Body: { phone: string; otp: string; name?: string } }>(
     "/api/v1/auth/verify-otp",
     async (request, reply) => {
@@ -114,7 +137,6 @@ export async function authRoutes(app: FastifyInstance) {
         return reply.status(400).send({ error: "phone and otp are required" });
       }
 
-      // Fetch latest unverified OTP for this phone
       const { data: otpRow } = await supabaseAdmin
         .from("otp_logs")
         .select("id, otp_hash, expires_at")
@@ -137,34 +159,51 @@ export async function authRoutes(app: FastifyInstance) {
         return reply.status(400).send({ error: "Incorrect OTP" });
       }
 
-      // Mark OTP as verified
       await supabaseAdmin
         .from("otp_logs")
         .update({ verified_at: new Date().toISOString() })
         .eq("id", otpRow.id);
 
-      // Upsert user profile
+      const normalizedName = typeof name === "string" ? name.trim() : "";
       const { data: existingUser } = await supabaseAdmin
         .from("users")
-        .select("id, role, subscription_status")
+        .select("id, phone, email, full_name, role, exam_path, subscription_status")
         .eq("phone", phone)
         .maybeSingle();
 
-      let userId: string;
-      let role: string;
+      let identity: ReturnType<typeof buildUserIdentity>;
 
       if (existingUser) {
-        userId = existingUser.id;
-        role = existingUser.role;
+        const existingRole = normalizeUserRole(existingUser.role) ?? "student";
+        if (isAdminCapableRole(existingRole)) {
+          return reply.status(403).send({
+            error: "This number belongs to an admin profile. Use the admin login instead.",
+          });
+        }
+
+        if (normalizedName.length > 0 && normalizedName !== existingUser.full_name) {
+          const { error: updateError } = await supabaseAdmin
+            .from("users")
+            .update({ full_name: normalizedName })
+            .eq("id", existingUser.id);
+
+          if (updateError) {
+            return reply.status(500).send({ error: "Could not update user profile" });
+          }
+        }
+
+        identity = buildUserIdentity({
+          ...existingUser,
+          full_name: normalizedName.length > 0 ? normalizedName : existingUser.full_name,
+        });
       } else {
-        // New user — generate a UUID and insert
         const newId = crypto.randomUUID();
         const { error: insertError } = await supabaseAdmin
           .from("users")
           .insert({
             id: newId,
             phone,
-            full_name: name ?? null,
+            full_name: normalizedName || null,
             role: "student",
             subscription_status: "free",
           });
@@ -172,25 +211,34 @@ export async function authRoutes(app: FastifyInstance) {
         if (insertError) {
           return reply.status(500).send({ error: "Could not create user" });
         }
-        userId = newId;
-        role = "student";
+
+        identity = buildUserIdentity({
+          id: newId,
+          phone,
+          email: null,
+          full_name: normalizedName || null,
+          role: "student",
+          exam_path: null,
+          subscription_status: "free",
+        });
       }
 
-      // Issue tokens
-      const accessToken = signAccess({ sub: userId, phone, role });
+      const accessToken = signAccess({
+        sub: identity.id,
+        phone: identity.phone ?? phone,
+        role: identity.role,
+      });
       const refreshJti = crypto.randomUUID();
-      const refreshToken = signRefresh({ sub: userId, jti: refreshJti });
+      const refreshToken = signRefresh({ sub: identity.id, jti: refreshJti });
 
       return {
         accessToken,
         refreshToken,
-        user: { id: userId, phone, role },
+        user: identity,
       };
     }
   );
 
-  // POST /api/v1/auth/refresh
-  // Body: { refreshToken }
   app.post<{ Body: { refreshToken: string } }>(
     "/api/v1/auth/refresh",
     async (request, reply) => {
@@ -206,10 +254,9 @@ export async function authRoutes(app: FastifyInstance) {
         return reply.status(401).send({ error: "Invalid or expired refresh token" });
       }
 
-      // Fetch user to get current role/phone
       const { data: user } = await supabaseAdmin
         .from("users")
-        .select("id, phone, role")
+        .select("id, phone, email, full_name, role, exam_path, subscription_status")
         .eq("id", payload.sub)
         .maybeSingle();
 
@@ -217,19 +264,29 @@ export async function authRoutes(app: FastifyInstance) {
         return reply.status(401).send({ error: "User not found" });
       }
 
+      const identity = buildUserIdentity(user);
+      if (isAdminCapableRole(identity.role)) {
+        return reply.status(403).send({
+          error: "This account uses admin login. Use the admin site instead.",
+        });
+      }
+
       const newAccessToken = signAccess({
-        sub: user.id,
-        phone: user.phone ?? "",
-        role: user.role,
+        sub: identity.id,
+        phone: identity.phone ?? "",
+        role: identity.role,
       });
       const newRefreshJti = crypto.randomUUID();
-      const newRefreshToken = signRefresh({ sub: user.id, jti: newRefreshJti });
+      const newRefreshToken = signRefresh({ sub: identity.id, jti: newRefreshJti });
 
-      return { accessToken: newAccessToken, refreshToken: newRefreshToken };
+      return {
+        accessToken: newAccessToken,
+        refreshToken: newRefreshToken,
+        user: identity,
+      };
     }
   );
 
-  // GET /api/v1/auth/me
   app.get("/api/v1/auth/me", async (request, reply) => {
     const token = getBearerToken(request.headers.authorization);
     if (!token) {
@@ -245,7 +302,7 @@ export async function authRoutes(app: FastifyInstance) {
 
     const { data: user } = await supabaseAdmin
       .from("users")
-      .select("id, phone, full_name, role, exam_path, subscription_status")
+      .select("id, phone, email, full_name, role, exam_path, subscription_status")
       .eq("id", payload.sub)
       .maybeSingle();
 
@@ -253,11 +310,16 @@ export async function authRoutes(app: FastifyInstance) {
       return reply.status(404).send({ error: "User not found" });
     }
 
-    return user;
+    const identity = buildUserIdentity(user as UserIdentityRow);
+    if (isAdminCapableRole(identity.role)) {
+      return reply.status(403).send({
+        error: "This account uses admin login. Use the admin site instead.",
+      });
+    }
+
+    return identity;
   });
 
-  // PATCH /api/v1/auth/exam-path
-  // Body: { exam_path: "JCE" | "MSCE" | "PSLCE" }
   app.patch<{ Body: { exam_path: string } }>(
     "/api/v1/auth/exam-path",
     async (request, reply) => {
@@ -269,6 +331,12 @@ export async function authRoutes(app: FastifyInstance) {
         payload = verifyAccess(token);
       } catch {
         return reply.status(401).send({ error: "Invalid or expired token" });
+      }
+
+      if (isAdminCapableRole(payload.role)) {
+        return reply.status(403).send({
+          error: "This account uses admin login. Use the admin site instead.",
+        });
       }
 
       const { exam_path } = request.body ?? {};

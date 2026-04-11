@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { isSuperAdminRole, type AdminUiExamPath } from "@/lib/admin";
+import { hasContentAccess, type AdminRole, type AdminUiExamPath } from "@/lib/admin";
 import type { ContentTreeSubjectDto } from "@/lib/content";
 import { secondaryButtonClassName } from "@/components/AdminForm";
 import { SubjectForm } from "@/components/SubjectForm";
@@ -10,14 +10,14 @@ import { EmptyState, SurfaceCard } from "@/components/AdminUi";
 
 type Props = {
   token: string;
-  role: string;
+  role: AdminRole;
   examPath: AdminUiExamPath;
   subjects: ContentTreeSubjectDto[];
 };
 
 export function SubjectsManager({ token, role, examPath, subjects }: Props) {
   const router = useRouter();
-  const isSuperAdmin = isSuperAdminRole(role);
+  const canManageSubjects = hasContentAccess(role);
   const [isPending, startTransition] = useTransition();
   const [selectedSubjectId, setSelectedSubjectId] = useState<string | null>(subjects[0]?.id ?? null);
   const [isCreating, setIsCreating] = useState(subjects.length === 0);
@@ -48,7 +48,7 @@ export function SubjectsManager({ token, role, examPath, subjects }: Props) {
         title="Subjects"
         description="Keep each catalog clean by managing subjects inside the active exam level."
         action={
-          isSuperAdmin ? (
+          canManageSubjects ? (
             <button
               type="button"
               onClick={() => {
@@ -104,15 +104,15 @@ export function SubjectsManager({ token, role, examPath, subjects }: Props) {
       <SurfaceCard
         title={isCreating ? "Create Subject" : selectedSubject ? selectedSubject.name : "Subject Details"}
         description={
-          isSuperAdmin
+          canManageSubjects
             ? "Use stable names and codes so uploads, topics, and papers stay easy to manage."
             : "This view is read-only for your role."
         }
       >
-        {!isSuperAdmin ? (
+        {!canManageSubjects ? (
           <EmptyState
             title="Read-only access"
-            description="Subject editing is limited to admin and super_admin accounts."
+            description="Subject editing is limited to content-author, school-admin, platform-admin, and super-admin accounts."
           />
         ) : (
           <SubjectForm

@@ -75,7 +75,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Refresh tokens proactively on boot
         try {
           const tokens = await refreshTokens(session.refreshToken);
-          const updated: AuthSession = { ...tokens, user: session.user };
+          const updated: AuthSession = tokens;
           await saveSession(updated);
           const examPath = await resolveExamPath();
           setState({
@@ -117,7 +117,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await saveExamPath(path);
     setState((prev) => {
       if (prev.status !== "authenticated") return prev;
-      return { ...prev, examPath: path };
+      return {
+        ...prev,
+        examPath: path,
+        user: {
+          ...prev.user,
+          exam_path: path,
+        },
+      };
     });
   };
 

@@ -11,6 +11,7 @@ import { paperAttemptRoutes } from "./routes/paperAttempts.js";
 import { paperAdminRoutes } from "./routes/paperAdmin.js";
 import { contentRoutes } from "./routes/content.js";
 import { adminResourceRoutes } from "./routes/adminResources.js";
+import { waitlistRoutes } from "./routes/waitlist.js";
 
 const app = Fastify({ logger: true });
 
@@ -37,6 +38,7 @@ const start = async () => {
     await app.register(paperAdminRoutes);
     await app.register(contentRoutes);
     await app.register(adminResourceRoutes);
+    await app.register(waitlistRoutes);
 
     await app.listen({ port: 4000, host: "0.0.0.0" });
     console.log("API running on http://localhost:4000");

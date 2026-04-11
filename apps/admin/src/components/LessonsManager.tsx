@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { canEditLessons } from "@/lib/admin";
+import { canEditLessons, type AdminRole } from "@/lib/admin";
 import {
   getLessonContentMode,
   getPersistedLessonBlocks,
@@ -15,7 +15,7 @@ import { LessonEditor } from "@/components/LessonEditor";
 
 type Props = {
   token: string;
-  role: string;
+  role: AdminRole;
   subjects: ContentTreeSubjectDto[];
   lessons: LessonAdminDto[];
 };
@@ -188,7 +188,7 @@ export function LessonsManager({ token, role, subjects, lessons }: Props) {
         ) : !canEdit ? (
           <EmptyState
             title="Read-only access"
-            description="Lesson editing is limited to admin, super_admin, and school_admin accounts."
+            description="Lesson editing is limited to content-author, school-admin, platform-admin, and super-admin accounts."
           />
         ) : (
           <LessonEditor

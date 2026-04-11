@@ -2,7 +2,7 @@
 
 import { type FormEvent, useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { isSuperAdminRole } from "@/lib/admin";
+import { hasPlatformAccess, type AdminRole } from "@/lib/admin";
 import { requestJson } from "@/lib/adminApi";
 import {
   QUESTION_AUTO_MARKING_MODE_OPTIONS,
@@ -21,7 +21,7 @@ import { EmptyState, SurfaceCard } from "@/components/AdminUi";
 
 type Props = {
   token: string;
-  role: string;
+  role: AdminRole;
   subjects: ContentTreeSubjectDto[];
   papers: ExamPaperAdminDto[];
   questions: QuestionAdminDto[];
@@ -30,7 +30,7 @@ type Props = {
 
 export function PaperLinksManager({ token, role, subjects, papers, questions, links }: Props) {
   const router = useRouter();
-  const isSuperAdmin = isSuperAdminRole(role);
+  const canManagePaperLinks = hasPlatformAccess(role);
   const [isPending, startTransition] = useTransition();
   const [selectedSubjectId, setSelectedSubjectId] = useState<string | null>(subjects[0]?.id ?? null);
   const [selectedPaperId, setSelectedPaperId] = useState<string | null>(null);
@@ -222,10 +222,10 @@ export function PaperLinksManager({ token, role, subjects, papers, questions, li
             title="Choose a paper"
             description="Select an exam paper from the left to add, reorder, or remove linked questions."
           />
-        ) : !isSuperAdmin ? (
+        ) : !canManagePaperLinks ? (
           <EmptyState
             title="Read-only access"
-            description="Paper-question linking is limited to admin and super_admin accounts."
+            description="Paper-question linking is limited to platform-admin and super-admin accounts."
           />
         ) : (
           <div className="flex flex-col gap-6">

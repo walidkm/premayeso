@@ -7,7 +7,7 @@
     "dev": "tsx watch src/server.ts",
     "start": "node dist/server.js",
     "build": "tsc",
-    "test": "npm run build && node dist/lib/paperWorkbook.test.js && node dist/lib/paperAttempts.test.js && node dist/lib/paperPublicationValidation.test.js",
+    "test": "npm run build && node dist/lib/roles.test.js && node dist/lib/paperWorkbook.test.js && node dist/lib/paperAttempts.test.js && node dist/lib/paperPublicationValidation.test.js",
     "test:db": "npm run build && node dist/lib/paperFlow.integration.test.js"
   },
   "dependencies": {

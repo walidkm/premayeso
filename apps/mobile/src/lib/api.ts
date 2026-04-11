@@ -1,4 +1,4 @@
-import { getAccessToken } from "./auth";
+import { getAccessToken, type AdminPermissions, type AuthUser, type SubscriptionStatus } from "./auth";
 import { type ExamPath } from "./examPath";
 
 const API_URL = (process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:4000").replace(/\/$/, "");
@@ -53,11 +53,14 @@ export async function setExamPathApi(examPath: ExamPath): Promise<void> {
 
 export type AuthMe = {
   id: string;
-  phone: string | null;
+  phone: string;
+  identifier: string | null;
+  name: string | null;
   full_name: string | null;
   role: string;
-  exam_path: string | null;
-  subscription_status: string;
+  exam_path: ExamPath | null;
+  subscription_status: SubscriptionStatus;
+  admin_permissions: AdminPermissions | null;
 };
 
 export async function getMe(): Promise<AuthMe> {
@@ -501,7 +504,7 @@ export async function requestOtp(phone: string): Promise<void> {
 export type AuthResult = {
   accessToken: string;
   refreshToken: string;
-  user: { id: string; phone: string; role: string };
+  user: AuthUser;
 };
 
 export async function verifyOtp(
@@ -523,7 +526,7 @@ export async function verifyOtp(
 
 export async function refreshTokens(
   refreshToken: string
-): Promise<{ accessToken: string; refreshToken: string }> {
+): Promise<{ accessToken: string; refreshToken: string; user: AuthUser }> {
   const res = await fetch(`${API_URL}/api/v1/auth/refresh`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

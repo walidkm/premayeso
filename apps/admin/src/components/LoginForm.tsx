@@ -3,6 +3,7 @@
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { isAdminRole } from "@/lib/admin";
 
 type ProfileRole = {
   role: string | null;
@@ -46,8 +47,7 @@ export function LoginForm() {
       return;
     }
 
-    const ADMIN_ROLES = ["admin", "super_admin", "school_admin", "family_admin"];
-    if (!profile?.role || !ADMIN_ROLES.includes(profile.role)) {
+    if (!profile?.role || !isAdminRole(profile.role)) {
       await supabase.auth.signOut();
       setErrorMsg("This account does not have admin access.");
       setSubmitting(false);

@@ -11,7 +11,7 @@ export default async function RubricsPage({
 }: {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { supabase, examPath, role, email, token } = await getAdminPageContext(searchParams);
+  const { supabase, examPath, role, email, token } = await getAdminPageContext(searchParams, { area: "platform" });
 
   const { data: subjectData } = await supabase
     .from("subjects")

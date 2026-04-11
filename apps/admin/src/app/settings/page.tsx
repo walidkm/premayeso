@@ -2,7 +2,7 @@ import { AdminShell } from "@/components/AdminShell";
 import { EmptyState, PageIntro, SurfaceCard } from "@/components/AdminUi";
 import { IntegrationsForm, type SettingRow } from "@/components/IntegrationsForm";
 import { getAdminPageContext } from "@/lib/adminPage";
-import { isSuperAdminRole } from "@/lib/admin";
+import { hasPlatformAccess } from "@/lib/admin";
 
 export const revalidate = 0;
 
@@ -13,11 +13,11 @@ export default async function SettingsPage({
 }: {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { examPath, role, email, token } = await getAdminPageContext(searchParams);
-  const isSuperAdmin = isSuperAdminRole(role);
+  const { examPath, role, email, token } = await getAdminPageContext(searchParams, { area: "platform" });
+  const canManagePlatform = hasPlatformAccess(role);
 
   let settings: SettingRow[] = [];
-  if (token && isSuperAdmin) {
+  if (token && canManagePlatform) {
     try {
       const response = await fetch(`${API_URL}/admin/settings`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -39,8 +39,8 @@ export default async function SettingsPage({
         description="Keep third-party configuration separate from content management. The level switcher still stays global in the header so you can move back to content without losing context."
       />
 
-      {!isSuperAdmin ? (
-        <SurfaceCard title="Read-only access" description="Integration settings remain limited to admin and super_admin accounts.">
+      {!canManagePlatform ? (
+        <SurfaceCard title="Read-only access" description="Integration settings remain limited to platform-admin and super-admin accounts.">
           <EmptyState
             title="No settings access"
             description="This account can manage content where permitted, but integration credentials and feature toggles stay restricted."

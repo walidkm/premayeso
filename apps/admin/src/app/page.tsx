@@ -2,20 +2,26 @@ import Link from "next/link";
 import { AdminShell } from "@/components/AdminShell";
 import { EmptyState, PageIntro, StatCard, SurfaceCard } from "@/components/AdminUi";
 import { QuestionUploader } from "@/components/QuestionUploader";
-import { buildAdminHref, isSuperAdminRole } from "@/lib/admin";
+import {
+  buildAdminHref,
+  hasContentAccess,
+  hasPlatformAccess,
+  hasReviewerAccess,
+  roleLabel,
+} from "@/lib/admin";
 import { getAdminPageContext } from "@/lib/adminPage";
 
 export const revalidate = 0;
 
 const QUICK_LINKS = [
-  { href: "/subjects", label: "Manage Subjects", description: "Keep each exam level catalog clean and searchable." },
-  { href: "/topics", label: "Manage Topics", description: "Organize topics under the correct subject and exam level." },
-  { href: "/lessons", label: "Manage Lessons", description: "Edit lesson content, video support, and preview access." },
-  { href: "/exam-papers", label: "Manage Exam Papers", description: "Create past papers and school papers without cross-level mixing." },
-  { href: "/paper-links", label: "Manage Paper Links", description: "Attach questions to papers with order and section control." },
-  { href: "/rubrics", label: "Manage Rubrics", description: "Create reusable criterion-based rubrics for essays and structured parts." },
-  { href: "/marking", label: "Marking Queue", description: "Review pending essay and structured submissions before final scores are released." },
-  { href: "/schools", label: "Manage Schools", description: "Maintain reusable school records for school papers and admins." },
+  { href: "/subjects", label: "Manage Subjects", description: "Keep each exam level catalog clean and searchable.", area: "content" as const },
+  { href: "/topics", label: "Manage Topics", description: "Organize topics under the correct subject and exam level.", area: "content" as const },
+  { href: "/lessons", label: "Manage Lessons", description: "Edit lesson content, video support, and preview access.", area: "content" as const },
+  { href: "/exam-papers", label: "Manage Exam Papers", description: "Create past papers and school papers without cross-level mixing.", area: "platform" as const },
+  { href: "/paper-links", label: "Manage Paper Links", description: "Attach questions to papers with order and section control.", area: "platform" as const },
+  { href: "/rubrics", label: "Manage Rubrics", description: "Create reusable criterion-based rubrics for essays and structured parts.", area: "platform" as const },
+  { href: "/marking", label: "Marking Queue", description: "Review pending essay and structured submissions before final scores are released.", area: "review" as const },
+  { href: "/schools", label: "Manage Schools", description: "Maintain reusable school records for school papers and admins.", area: "platform" as const },
 ];
 
 export default async function DashboardPage({
@@ -24,7 +30,9 @@ export default async function DashboardPage({
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { supabase, examPath, role, email } = await getAdminPageContext(searchParams);
-  const isSuperAdmin = isSuperAdminRole(role);
+  const canAuthorContent = hasContentAccess(role);
+  const canReview = hasReviewerAccess(role);
+  const canManagePlatform = hasPlatformAccess(role);
 
   const [
     { count: subjectCount },
@@ -57,22 +65,26 @@ export default async function DashboardPage({
     <AdminShell activePath="/" examPath={examPath} email={email} role={role}>
       <PageIntro
         eyebrow={`${examPath} Control Panel`}
-        title={`${examPath} content at a glance`}
-        description="Manage subjects, topics, lessons, papers, and question links from one level-scoped admin surface. Change the level in the header to switch catalogs without mixing content."
+        title={`${examPath} admin workspace`}
+        description={`Signed in as ${roleLabel(role)}. Use the level switcher to stay inside the correct catalog without mixing authoring, review work, and platform controls.`}
         actions={
           <>
-            <Link
-              href={buildAdminHref("/subjects", examPath)}
-              className="rounded-2xl bg-zinc-950 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-zinc-800"
-            >
-              Open Subjects
-            </Link>
-            <Link
-              href={buildAdminHref("/topics", examPath)}
-              className="rounded-2xl border border-zinc-200 bg-white px-4 py-2.5 text-sm font-medium text-zinc-700 transition hover:border-zinc-300 hover:bg-zinc-50"
-            >
-              Open Topics
-            </Link>
+            {canAuthorContent ? (
+              <Link
+                href={buildAdminHref("/subjects", examPath)}
+                className="rounded-2xl bg-zinc-950 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-zinc-800"
+              >
+                Open Subjects
+              </Link>
+            ) : null}
+            {canReview ? (
+              <Link
+                href={buildAdminHref("/marking", examPath)}
+                className="rounded-2xl border border-zinc-200 bg-white px-4 py-2.5 text-sm font-medium text-zinc-700 transition hover:border-zinc-300 hover:bg-zinc-50"
+              >
+                Open Marking
+              </Link>
+            ) : null}
           </>
         }
       />
@@ -89,7 +101,11 @@ export default async function DashboardPage({
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
         <SurfaceCard title="Management Areas" description="Jump straight to the area you need without digging through a single content tree.">
           <div className="grid gap-3 md:grid-cols-2">
-            {QUICK_LINKS.filter((link) => (link.href === "/exam-papers" || link.href === "/paper-links" || link.href === "/rubrics" || link.href === "/marking" || link.href === "/schools" ? isSuperAdmin : true)).map((link) => (
+            {QUICK_LINKS.filter((link) => {
+              if (link.area === "content") return canAuthorContent;
+              if (link.area === "review") return canReview;
+              return canManagePlatform;
+            }).map((link) => (
               <Link
                 key={link.href}
                 href={buildAdminHref(link.href, examPath)}
@@ -124,7 +140,7 @@ export default async function DashboardPage({
         </SurfaceCard>
       </div>
 
-      {isSuperAdmin ? (
+      {canManagePlatform ? (
         <SurfaceCard
           title="Bulk Question Upload"
           description="Use the existing spreadsheet import flow without leaving the dashboard."
@@ -132,9 +148,9 @@ export default async function DashboardPage({
           <QuestionUploader />
         </SurfaceCard>
       ) : (
-        <SurfaceCard title="Your Access" description="This account can review the current level structure but cannot access super-admin upload actions.">
+        <SurfaceCard title="Your Access" description="This account only sees the admin areas granted by its role. Platform-wide upload actions stay restricted.">
           <p className="text-sm leading-6 text-zinc-600">
-            Signed in as {email ?? "an admin account"} with the role <span className="font-semibold text-zinc-900">{role}</span>.
+            Signed in as {email ?? "an admin account"} with the role <span className="font-semibold text-zinc-900">{roleLabel(role)}</span>.
           </p>
         </SurfaceCard>
       )}

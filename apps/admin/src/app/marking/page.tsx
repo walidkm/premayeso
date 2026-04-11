@@ -10,7 +10,7 @@ export default async function MarkingPage({
 }: {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { examPath, role, email, token } = await getAdminPageContext(searchParams);
+  const { examPath, role, email, token } = await getAdminPageContext(searchParams, { area: "review" });
 
   return (
     <AdminShell activePath="/marking" examPath={examPath} email={email} role={role}>

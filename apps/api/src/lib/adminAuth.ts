@@ -1,5 +1,12 @@
 import { FastifyReply, FastifyRequest } from "fastify";
 import { supabaseAdmin } from "./supabaseAdmin.js";
+import {
+  hasContentAuthorAccess,
+  hasPlatformAdminAccess,
+  hasReviewerAccess,
+  normalizeUserRole,
+  type UserRole,
+} from "./roles.js";
 
 type AdminProfile = {
   id: string;
@@ -10,11 +17,8 @@ type AdminProfile = {
 export type AdminContext = {
   userId: string;
   email: string | null;
-  role: string;
+  role: UserRole;
 };
-
-const SUPER_ADMIN_ROLES = ["admin", "super_admin"];
-const ANY_ADMIN_ROLES   = ["admin", "super_admin", "school_admin", "family_admin"];
 
 function getBearerToken(request: FastifyRequest): string | null {
   const authorization = request.headers.authorization;
@@ -27,7 +31,7 @@ function getBearerToken(request: FastifyRequest): string | null {
 async function resolveAdmin(
   request: FastifyRequest,
   reply: FastifyReply,
-  allowedRoles: string[]
+  accessCheck: (role: UserRole) => boolean
 ): Promise<AdminContext | null> {
   const token = getBearerToken(request);
   if (!token) {
@@ -53,7 +57,8 @@ async function resolveAdmin(
   }
 
   const profile = profileData as AdminProfile | null;
-  if (!profile?.role || !allowedRoles.includes(profile.role)) {
+  const normalizedRole = normalizeUserRole(profile?.role);
+  if (!profile || !normalizedRole || !accessCheck(normalizedRole)) {
     reply.status(403).send({ error: "Insufficient permissions" });
     return null;
   }
@@ -61,30 +66,34 @@ async function resolveAdmin(
   return {
     userId: profile.id,
     email: profile.email ?? authData.user.email ?? null,
-    role: profile.role,
+    role: normalizedRole,
   };
 }
 
-/** Super-admin only: admin, super_admin */
+/** Platform admin and super admin */
 export async function requireSuperAdmin(
   request: FastifyRequest,
   reply: FastifyReply
 ): Promise<AdminContext | null> {
-  return resolveAdmin(request, reply, SUPER_ADMIN_ROLES);
+  return resolveAdmin(request, reply, hasPlatformAdminAccess);
 }
 
-/** Any admin-type role: admin, super_admin, school_admin, family_admin */
+/** Any admin-capable role with access to at least one admin surface */
 export async function requireAnyAdmin(
   request: FastifyRequest,
   reply: FastifyReply
 ): Promise<AdminContext | null> {
-  return resolveAdmin(request, reply, ANY_ADMIN_ROLES);
+  return resolveAdmin(
+    request,
+    reply,
+    (role) => hasContentAuthorAccess(role) || hasReviewerAccess(role)
+  );
 }
 
-/** Backwards-compatible alias → same as requireSuperAdmin */
+/** Backwards-compatible alias -> same as requireSuperAdmin */
 export async function requireAdmin(
   request: FastifyRequest,
   reply: FastifyReply
 ): Promise<AdminContext | null> {
-  return resolveAdmin(request, reply, SUPER_ADMIN_ROLES);
+  return resolveAdmin(request, reply, hasPlatformAdminAccess);
 }

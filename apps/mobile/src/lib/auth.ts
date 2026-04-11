@@ -16,7 +16,21 @@ const USER_KEY    = "pm_user";
 export type AuthUser = {
   id: string;
   phone: string;
+  identifier: string | null;
+  name: string | null;
+  full_name: string | null;
   role: string;
+  exam_path: ExamPath | null;
+  subscription_status: SubscriptionStatus;
+  admin_permissions: AdminPermissions | null;
+};
+
+export type SubscriptionStatus = "free" | "premium" | "school" | "voucher" | "expired";
+
+export type AdminPermissions = {
+  can_author_content: boolean;
+  can_review_content: boolean;
+  can_manage_platform: boolean;
 };
 
 export type AuthSession = {

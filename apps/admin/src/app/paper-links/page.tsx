@@ -16,7 +16,7 @@ export default async function PaperLinksPage({
 }: {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { supabase, examPath, role, email, token } = await getAdminPageContext(searchParams);
+  const { supabase, examPath, role, email, token } = await getAdminPageContext(searchParams, { area: "platform" });
 
   const [{ data: subjectData }, { data: paperData }, { data: questionData }] = await Promise.all([
     supabase

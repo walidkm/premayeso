@@ -42,9 +42,10 @@ export default function QuizScreen({ route, navigation }: Props) {
   const { topic } = route.params;
   const { state } = useAuth();
   const userId = state.status === "authenticated" ? state.user.id : null;
-  // Admin accounts can see all hints; free users see only the first hint
+  // Premium access is a subscription concern, not a role.
   const isPremium =
-    state.status === "authenticated" && state.user.role === "admin";
+    state.status === "authenticated" &&
+    ["premium", "school", "voucher"].includes(state.user.subscription_status);
 
   const [questions, setQuestions] = useState<Question[]>([]);
   const [loading, setLoading] = useState(true);

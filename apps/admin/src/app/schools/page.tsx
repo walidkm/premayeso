@@ -11,7 +11,7 @@ export default async function SchoolsPage({
 }: {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { supabase, examPath, role, email, token } = await getAdminPageContext(searchParams);
+  const { supabase, examPath, role, email, token } = await getAdminPageContext(searchParams, { area: "platform" });
 
   const [{ data: schoolData }, { data: paperRows }, { data: userRows }] = await Promise.all([
     supabase.from("schools").select("id, name, created_at").order("name"),

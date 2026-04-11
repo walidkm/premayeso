@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { isSuperAdminRole, type AdminUiExamPath } from "@/lib/admin";
+import { hasPlatformAccess, type AdminRole, type AdminUiExamPath } from "@/lib/admin";
 import type { ContentTreeSubjectDto, ExamPaperAdminDto, SchoolAdminDto } from "@/lib/content";
 import { secondaryButtonClassName } from "@/components/AdminForm";
 import { EmptyState, SurfaceCard } from "@/components/AdminUi";
@@ -12,7 +12,7 @@ import { PaperWorkbookImporter } from "@/components/PaperWorkbookImporter";
 
 type Props = {
   token: string;
-  role: string;
+  role: AdminRole;
   examPath: AdminUiExamPath;
   subjects: ContentTreeSubjectDto[];
   schools: SchoolAdminDto[];
@@ -21,7 +21,7 @@ type Props = {
 
 export function ExamPapersManager({ token, role, examPath, subjects, schools, papers }: Props) {
   const router = useRouter();
-  const isSuperAdmin = isSuperAdminRole(role);
+  const canManagePapers = hasPlatformAccess(role);
   const [isPending, startTransition] = useTransition();
   const [selectedSubjectId, setSelectedSubjectId] = useState<string | null>(subjects[0]?.id ?? null);
   const [selectedPaperId, setSelectedPaperId] = useState<string | null>(null);
@@ -123,7 +123,7 @@ export function ExamPapersManager({ token, role, examPath, subjects, schools, pa
             : "Choose a subject to manage papers."
         }
         action={
-          isSuperAdmin && selectedSubject ? (
+          canManagePapers && selectedSubject ? (
             <button
               type="button"
               onClick={() => {
@@ -142,10 +142,10 @@ export function ExamPapersManager({ token, role, examPath, subjects, schools, pa
             title="Choose a subject"
             description="Exam papers are always tied to a subject. Pick one from the left to continue."
           />
-        ) : !isSuperAdmin ? (
+        ) : !canManagePapers ? (
           <EmptyState
             title="Read-only access"
-            description="Exam paper editing is limited to admin and super_admin accounts."
+            description="Exam paper editing is limited to platform-admin and super-admin accounts."
           />
         ) : (
           <div className="flex flex-col gap-6">

@@ -1,5 +1,6 @@
 import { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { getBearerToken, verifyAccess } from "../lib/jwt.js";
+import { isLearnerRole } from "../lib/roles.js";
 import {
   buildAttemptSummary,
   getAttemptQuestionSavedAnswers,
@@ -40,6 +41,10 @@ async function requireStudentToken(
 
   try {
     const payload = verifyAccess(token);
+    if (!isLearnerRole(payload.role)) {
+      reply.status(403).send({ error: "Learner access is required for this endpoint" });
+      return null;
+    }
     return { userId: payload.sub, role: payload.role };
   } catch {
     reply.status(401).send({ error: "Invalid or expired token" });

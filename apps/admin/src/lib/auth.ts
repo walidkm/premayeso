@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { isAdminRole, normalizeAdminRole } from "@/lib/admin";
 
 type UserRoleRow = {
   role: string | null;
@@ -18,8 +19,6 @@ export type AdminSessionState =
       isAdmin: boolean;
     };
 
-const ADMIN_ROLES = ["admin", "super_admin", "school_admin", "family_admin"];
-
 export async function getAdminSessionState(): Promise<AdminSessionState> {
   const supabase = await createClient();
   const {
@@ -36,7 +35,7 @@ export async function getAdminSessionState(): Promise<AdminSessionState> {
     .eq("id", user.id)
     .maybeSingle();
   const profile = profileData as UserRoleRow | null;
-  const role = profile?.role ?? "";
+  const role = normalizeAdminRole(profile?.role) ?? profile?.role ?? "";
 
   return {
     user: {
@@ -44,6 +43,6 @@ export async function getAdminSessionState(): Promise<AdminSessionState> {
       email: user.email ?? null,
       role,
     },
-    isAdmin: ADMIN_ROLES.includes(role),
+    isAdmin: isAdminRole(role),
   };
 }

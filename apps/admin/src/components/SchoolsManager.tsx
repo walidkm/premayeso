@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { isSuperAdminRole } from "@/lib/admin";
+import { hasPlatformAccess, type AdminRole } from "@/lib/admin";
 import type { SchoolAdminDto } from "@/lib/content";
 import { secondaryButtonClassName } from "@/components/AdminForm";
 import { EmptyState, SurfaceCard } from "@/components/AdminUi";
@@ -10,7 +10,7 @@ import { SchoolForm } from "@/components/SchoolForm";
 
 type Props = {
   token: string;
-  role: string;
+  role: AdminRole;
   schools: SchoolAdminDto[];
   paperCounts: Record<string, number>;
   userCounts: Record<string, number>;
@@ -18,7 +18,7 @@ type Props = {
 
 export function SchoolsManager({ token, role, schools, paperCounts, userCounts }: Props) {
   const router = useRouter();
-  const isSuperAdmin = isSuperAdminRole(role);
+  const canManageSchools = hasPlatformAccess(role);
   const [isPending, startTransition] = useTransition();
   const [selectedSchoolId, setSelectedSchoolId] = useState<string | null>(schools[0]?.id ?? null);
   const [isCreating, setIsCreating] = useState(schools.length === 0);
@@ -49,7 +49,7 @@ export function SchoolsManager({ token, role, schools, paperCounts, userCounts }
         title="Schools"
         description="Schools are shared across exam levels and can be reused as paper sources or school-admin anchors."
         action={
-          isSuperAdmin ? (
+          canManageSchools ? (
             <button
               type="button"
               onClick={() => {
@@ -103,15 +103,15 @@ export function SchoolsManager({ token, role, schools, paperCounts, userCounts }
       <SurfaceCard
         title={isCreating ? "Create School" : selectedSchool?.name ?? "School Details"}
         description={
-          isSuperAdmin
+          canManageSchools
             ? "Deleting a school is blocked while users or exam papers still reference it."
             : "This view is read-only for your role."
         }
       >
-        {!isSuperAdmin ? (
+        {!canManageSchools ? (
           <EmptyState
             title="Read-only access"
-            description="School editing is limited to admin and super_admin accounts."
+            description="School editing is limited to platform-admin and super-admin accounts."
           />
         ) : (
           <SchoolForm token={token} school={selectedSchool} onSaved={handleSaved} onDeleted={handleDeleted} />

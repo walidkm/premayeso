@@ -33,6 +33,9 @@ export default function SettingsScreen() {
   if (state.status !== "authenticated") return null;
 
   const { user, examPath } = state;
+  const displayName = user.full_name ?? user.name ?? user.phone;
+  const displaySubscription =
+    user.subscription_status.charAt(0).toUpperCase() + user.subscription_status.slice(1);
 
   const handleExamPathChange = async (path: ExamPath) => {
     if (path === examPath || savingPath) return;
@@ -57,7 +60,8 @@ export default function SettingsScreen() {
         </View>
         <View style={s.heroText}>
           <Text style={s.eyebrow}>Account</Text>
-          <Text style={s.phone}>{user.phone}</Text>
+          <Text style={s.phone}>{displayName}</Text>
+          <Text style={s.subcopy}>{user.phone}</Text>
           <Text style={s.subcopy}>
             Manage your exam level and keep your dashboard focused on the right learning path.
           </Text>
@@ -118,6 +122,8 @@ export default function SettingsScreen() {
             label="Role"
             value={user.role.charAt(0).toUpperCase() + user.role.slice(1)}
           />
+          <View style={s.divider} />
+          <Row label="Plan" value={displaySubscription} />
           <View style={s.divider} />
           <Row label="Current level" value={EXAM_PATH_LABELS[examPath]} />
         </View>

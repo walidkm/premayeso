@@ -27,6 +27,27 @@ export async function subjectRoutes(app: FastifyInstance) {
     }
   );
 
+  app.get<{ Params: { subjectId: string } }>(
+    "/subjects/:subjectId",
+    async (request, reply) => {
+      const { data, error } = await supabase
+        .from("subjects")
+        .select("id, name, code, description, exam_path, order_index")
+        .eq("id", request.params.subjectId)
+        .maybeSingle();
+
+      if (error) {
+        return reply.status(500).send({ error: error.message });
+      }
+
+      if (!data) {
+        return reply.status(404).send({ error: "Subject not found" });
+      }
+
+      return data;
+    }
+  );
+
   // GET /subjects/:subjectId/topics
   app.get<{ Params: { subjectId: string }; Querystring: { form_level?: string } }>(
     "/subjects/:subjectId/topics",
@@ -48,6 +69,27 @@ export async function subjectRoutes(app: FastifyInstance) {
 
       if (error) {
         return reply.status(500).send({ error: error.message });
+      }
+
+      return data;
+    }
+  );
+
+  app.get<{ Params: { topicId: string } }>(
+    "/topics/:topicId",
+    async (request, reply) => {
+      const { data, error } = await supabase
+        .from("topics")
+        .select("id, subject_id, name, description, form_level, exam_path, order_index")
+        .eq("id", request.params.topicId)
+        .maybeSingle();
+
+      if (error) {
+        return reply.status(500).send({ error: error.message });
+      }
+
+      if (!data) {
+        return reply.status(404).send({ error: "Topic not found" });
       }
 
       return data;

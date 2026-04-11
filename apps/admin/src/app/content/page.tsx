@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
-import { normalizeAdminExamPath } from "@/lib/admin";
+import { buildAdminHref, getDefaultAdminPath, normalizeAdminExamPath } from "@/lib/admin";
+import { getAdminPageContext } from "@/lib/adminPage";
 
 export const revalidate = 0;
 
@@ -10,5 +11,6 @@ export default async function LegacyContentPage({
 }) {
   const params = searchParams ? await searchParams : {};
   const examPath = normalizeAdminExamPath(params.exam_path);
-  redirect(`/subjects?exam_path=${examPath}`);
+  const { role } = await getAdminPageContext(params);
+  redirect(buildAdminHref(getDefaultAdminPath(role), examPath));
 }

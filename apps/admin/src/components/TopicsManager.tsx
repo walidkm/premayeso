@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { isSuperAdminRole } from "@/lib/admin";
+import { hasContentAccess, type AdminRole } from "@/lib/admin";
 import type { ContentTreeSubjectDto, ContentTreeTopicDto } from "@/lib/content";
 import { secondaryButtonClassName } from "@/components/AdminForm";
 import { EmptyState, SurfaceCard } from "@/components/AdminUi";
@@ -10,13 +10,13 @@ import { TopicForm } from "@/components/TopicForm";
 
 type Props = {
   token: string;
-  role: string;
+  role: AdminRole;
   subjects: ContentTreeSubjectDto[];
 };
 
 export function TopicsManager({ token, role, subjects }: Props) {
   const router = useRouter();
-  const isSuperAdmin = isSuperAdminRole(role);
+  const canManageTopics = hasContentAccess(role);
   const [isPending, startTransition] = useTransition();
   const [selectedSubjectId, setSelectedSubjectId] = useState<string | null>(subjects[0]?.id ?? null);
   const [selectedTopicId, setSelectedTopicId] = useState<string | null>(subjects[0]?.topics[0]?.id ?? null);
@@ -125,7 +125,7 @@ export function TopicsManager({ token, role, subjects }: Props) {
             : "Choose a subject to begin."
         }
         action={
-          isSuperAdmin && selectedSubject ? (
+          canManageTopics && selectedSubject ? (
             <button
               type="button"
               onClick={() => {
@@ -144,10 +144,10 @@ export function TopicsManager({ token, role, subjects }: Props) {
             title="Choose a subject"
             description="The topic editor becomes available after you pick a subject from the list."
           />
-        ) : !isSuperAdmin ? (
+        ) : !canManageTopics ? (
           <EmptyState
             title="Read-only access"
-            description="Topic editing is limited to admin and super_admin accounts."
+            description="Topic editing is limited to content-author, school-admin, platform-admin, and super-admin accounts."
           />
         ) : (
           <TopicForm

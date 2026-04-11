@@ -11,7 +11,7 @@ export default async function LessonsPage({
 }: {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { supabase, examPath, role, email, token } = await getAdminPageContext(searchParams);
+  const { supabase, examPath, role, email, token } = await getAdminPageContext(searchParams, { area: "content" });
 
   const [{ data: subjectData }, lessonQueryResult] = await Promise.all([
     supabase
